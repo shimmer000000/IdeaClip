@@ -1,9 +1,10 @@
+import type { SkillBinding } from '../skills/repository';
 import type { Note } from '../storage';
 export type AnalysisMode = 'manual' | 'after-save' | 'assist';
 export type TaskState = 'waiting' | 'running' | 'done' | 'failed' | 'cancelled' | 'paused';
 export const MODES = { manual: '手动模式', 'after-save': '保存后自动分析', assist: '浏览辅助模式' };
 export const STATES: Record<TaskState, string> = { waiting: '等待', running: '运行', done: '完成', failed: '失败', cancelled: '已取消', paused: '已暂停' };
-export interface AutoPolicy {
+export interface AutoPolicy extends Partial<SkillBinding> {
   id: 'general'; mode: AnalysisMode; autoEnabled: boolean; paused: boolean; reason: string;
   allowHosts: string[]; denyHosts: string[]; allowManual: boolean;
   consentId: string; configVersion: string; credentialVersion: string | null; sessionId: string;
@@ -11,6 +12,7 @@ export interface AutoPolicy {
 }
 export const DEFAULT_POLICY: AutoPolicy = { id: 'general', mode: 'manual', autoEnabled: false, paused: false, reason: '', allowHosts: [], denyHosts: [], allowManual: false, consentId: '', configVersion: '', credentialVersion: null, sessionId: '', perTaskMicros: 0, dailyBudgetMicros: 0, acceptedAt: 0 };
 export interface AITask {
+  skillId?: string; skillVersion?: string; skillSignature?: string;
   id: string; dedupeKey: string; noteId: string; revision: number; snapshotHash: string;
   state: TaskState; reason: string; errorCode: string; source: 'save' | 'assist';
   consentId: string; sessionId: string; createdAt: number; updatedAt: number;

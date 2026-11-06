@@ -91,7 +91,7 @@ describe('完整备份恢复', () => {
     const bytes = new Uint8Array(await file.arrayBuffer()); bytes[50] ^= 1; await expect(preview(new Blob([bytes]))).rejects.toThrow(); expect(await source.notes.count()).toBe(1);
   });
   it('不兼容的格式和未来 schema 被拒绝', async () => {
-    const file = await exportBackup(source); for (const databaseVersion of [0, 9]) await expect(preview(await rewrite(file, (_entries, manifest) => { manifest.databaseVersion = databaseVersion; }))).rejects.toThrow('不兼容');
+    const file = await exportBackup(source); for (const databaseVersion of [0, 10]) await expect(preview(await rewrite(file, (_entries, manifest) => { manifest.databaseVersion = databaseVersion; }))).rejects.toThrow('不兼容');
     await expect(preview(await rewrite(file, (_entries, manifest) => { manifest.formatVersion = 999 as 1; }))).rejects.toThrow('不兼容');
   });
   it('缺失图片或关联、重复 ID 与恶意 URL 都拒绝', async () => {

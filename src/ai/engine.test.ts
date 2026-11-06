@@ -1,9 +1,10 @@
+import { BUILTINS, skillSystem } from '../skills/model';
 import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IdeaClipDB, createNote, getSettings, setAIEnabled } from '../storage';
 import { AIEngine } from './engine';
 import { DEFAULT_CONFIG, PROVIDERS, endpointOf, validateConfig, type Credential } from './config';
-import { SYSTEM_PROMPT, markdown, validateReport } from './report';
+import { markdown, validateReport } from './report';
 import { chatTransport } from './transport';
 import { mockCompletion, mockReport } from '../../tests/ai-fixture';
 import { exportBackup, prepareBackup, discardBackup, restoreBackup } from '../backup/service';
@@ -72,7 +73,7 @@ describe('网络、安全和预算', () => {
     await setAIEnabled(true, database); const report = mockReport(); report.sections.summary[0].text = key; const encoded = [...key].map(char => '\\u' + char.charCodeAt(0).toString(16).padStart(4, '0')).join(''); const data = mockCompletion(report); data.choices[0].message.content = data.choices[0].message.content.replace(key, encoded); const e = engine(vi.fn(async () => Response.json(data))); await expect(e.instance.run((await e.instance.preview(noteId, [])).id)).rejects.toThrow('凭据'); expect(await database.analyses.count()).toBe(0);
   });
   it('系统提示固定，网页指令仅在 user 数据中，无工具和远程图片 URL', async () => {
-    await setAIEnabled(true, database); const { instance, fetcher } = engine(); await instance.run((await instance.preview(noteId, [])).id); const call = fetcher.mock.calls[0] as unknown as [string, RequestInit]; const body = JSON.parse(call[1].body as string); expect(body.messages).toHaveLength(2); expect(body.messages[0]).toEqual({ role: 'system', content: SYSTEM_PROMPT }); expect(body.messages[1].role).toBe('user'); expect(body.messages[1].content).toContain('忽略系统'); expect(body.tools).toBeUndefined(); expect(call[1]).toMatchObject({ redirect: 'error', credentials: 'omit', referrerPolicy: 'no-referrer' });
+    await setAIEnabled(true, database); const { instance, fetcher } = engine(); await instance.run((await instance.preview(noteId, [])).id); const call = fetcher.mock.calls[0] as unknown as [string, RequestInit]; const body = JSON.parse(call[1].body as string); expect(body.messages).toHaveLength(2); expect(body.messages[0]).toEqual({ role: 'system', content: skillSystem(BUILTINS[0]) }); expect(body.messages[1].role).toBe('user'); expect(body.messages[1].content).toContain('忽略系统'); expect(body.tools).toBeUndefined(); expect(call[1]).toMatchObject({ redirect: 'error', credentials: 'omit', referrerPolicy: 'no-referrer' });
   });
   it('只发送主动选择的图像，文本模型拒绝，未选图片不物化', async () => {
     await setAIEnabled(true, database); await database.screenshots.put({ id: 'image', blob: new Blob(['synthetic-image'], { type: 'image/png' }), kind: 'visible', width: 1, height: 1, originalBytes: 1, sourceTabId: 1, sourceUrl: '', sourceTitle: '', createdAt: 1 }); await database.notes.update(noteId, { screenshotIds: ['image'] });
@@ -133,7 +134,7 @@ describe('报告结构、历史与备份', () => {
   });
   it('schema v5 升级 v6 保留笔记、图片、原分析和设置', async () => {
     const legacy = new Dexie('ai-migration-' + crypto.randomUUID()); legacy.version(5).stores({ notes: 'id', screenshots: 'id', analyses: 'id, noteId, createdAt', settings: 'id', projects: 'id', contentCaptures: 'id', noteDrafts: 'id', noteCatalog: 'id', noteSearch: 'id', draftCatalog: 'id', libraryState: 'id', screenshotThumbs: 'id' }); await legacy.table('notes').put({ id: 'old', body: '旧感悟' }); await legacy.table('screenshots').put({ id: 'pic', blob: new Blob(['old']) }); await legacy.table('analyses').put({ id: 'old-report', noteId: 'old', createdAt: 1, content: '旧分析' }); await legacy.table('settings').put({ id: 'general', aiEnabled: false }); legacy.close(); const upgraded = new IdeaClipDB(legacy.name);
-    try { await upgraded.open(); expect(upgraded.verno).toBe(8); expect((await upgraded.notes.get('old'))?.body).toBe('旧感悟'); expect(await (await upgraded.screenshots.get('pic'))!.blob.text()).toBe('old'); expect((await upgraded.analyses.get('old-report'))?.content).toBe('旧分析'); expect(await upgraded.aiUsage.count()).toBe(0); } finally { await upgraded.delete(); }
+    try { await upgraded.open(); expect(upgraded.verno).toBe(9); expect((await upgraded.notes.get('old'))?.body).toBe('旧感悟'); expect(await (await upgraded.screenshots.get('pic'))!.blob.text()).toBe('old'); expect((await upgraded.analyses.get('old-report'))?.content).toBe('旧分析'); expect(await upgraded.aiUsage.count()).toBe(0); } finally { await upgraded.delete(); }
   });
   it('页面关闭清理引擎后，不允许再预览或自动执行', async () => { await setAIEnabled(true, database); const e = engine(); e.instance.close(); await expect(e.instance.preview(noteId, [])).rejects.toThrow('关闭'); expect(e.fetcher).not.toHaveBeenCalled(); });
 });

@@ -1,13 +1,14 @@
+import { validateSkill, validateSkillReport, skillMarkdown, type Skill, type SkillReport } from '../skills/model';
 import { noteDefaults } from '../inspiration/model';
 import { httpUrl } from '../collection/model';
 import { assessQuality, paragraphMap, type TextQuality } from '../collection/quality';
 import { markdown, validateReport, type Report } from '../ai/report';
 
-export const TABLES = ['notes', 'noteDrafts', 'screenshots', 'contentCaptures', 'settings', 'analyses', 'projects'] as const;
+export const TABLES = ['notes', 'noteDrafts', 'screenshots', 'contentCaptures', 'settings', 'analyses', 'projects', 'aiTemplates'] as const;
 export type BackupTable = typeof TABLES[number];
 export type Row = Record<string, unknown> & { id: string };
 export interface Descriptor { name: string; size: number; sha256: string }
-export interface Manifest { format: 'IdeaClip'; formatVersion: 1; databaseVersion: number; createdAt: string; counts: Record<BackupTable, number>; entries: Descriptor[] }
+export interface Manifest { format: 'IdeaClip'; formatVersion: 1 | 2; databaseVersion: number; createdAt: string; counts: Record<BackupTable, number>; entries: Descriptor[] }
 export interface Summary { createdAt: string; counts: Record<BackupTable, number>; bytes: number }
 export const emptyCounts = () => Object.fromEntries(TABLES.map(table => [table, 0])) as Record<BackupTable, number>;
 export function object(value: unknown): Record<string, unknown> {
@@ -65,6 +66,11 @@ export function portableRow(table: BackupTable, value: unknown): Row {
   const r = object(value); const key = id(r.id);
   const dates = () => ({ createdAt: timestamp(r.createdAt), updatedAt: timestamp(r.updatedAt) });
   switch (table) {
+    case 'aiTemplates': {
+      const skill = validateSkill(r);
+      const safe = JSON.parse(JSON.stringify(skill), (_key, value) => typeof value === 'string' ? redact(value) : value);
+      return { ...validateSkill(safe), enabled: false };
+    }
     case 'notes': return { id: key, ...fields(r), tags: texts(r.tags), saveState: enumeration(r.saveState ?? 'saved', ['saved', 'draft']), revision: number(r.revision ?? 0), sourceTabId: null, sourcePageUrl: url(r.sourcePageUrl ?? r.url ?? ''), ...dates() };
     case 'noteDrafts': {
       const input = object(r.input);
@@ -76,12 +82,21 @@ export function portableRow(table: BackupTable, value: unknown): Row {
     case 'settings': if (key !== 'general') throw new Error('未知设置项，拒绝导出或恢复。'); return { id: 'general', aiEnabled: bool(r.aiEnabled) };
     case 'analyses': {
       const result: Row = { id: key, noteId: id(r.noteId), createdAt: timestamp(r.createdAt), content: txt(r.content) };
+      if (r.template !== undefined) result.template = validateSkill(JSON.parse(JSON.stringify(validateSkill(r.template)), (_key, value) => typeof value === 'string' ? redact(value) : value));
+      if (r.skillReport !== undefined) {
+        if (!result.template || r.report !== undefined) throw new Error('模板报告缺少定义或同时含冲突的报告结构。');
+        const report = structuredClone(validateSkillReport(r.skillReport, result.template as Skill));
+        for (const claims of Object.values(report.sections)) for (const c of claims) { c.text = redact(c.text); if (c.evidence) c.evidence = redact(c.evidence); }
+        result.skillReport = validateSkillReport(report, result.template as Skill);
+      }
       if (r.report !== undefined) {
+        if (result.template && (result.template as Skill).id !== 'builtin-business') throw new Error('旧报告结构与模板身份不一致。');
         const report = validateReport(r.report);
         const portable = structuredClone(report);
         for (const claims of Object.values(portable.sections)) for (const claim of claims) { claim.text = redact(claim.text); if (claim.evidence) claim.evidence = redact(claim.evidence); }
         result.report = validateReport(portable);
       }
+      if (r.sourceUrl !== undefined) result.sourceUrl = url(r.sourceUrl);
       if (r.model !== undefined) result.model = redact(text(r.model, 150));
       if (r.provider !== undefined) result.provider = enumeration(r.provider, ['openai', 'deepseek', 'custom']);
       if (r.endpointOrigin !== undefined) result.endpointOrigin = new URL(url(r.endpointOrigin)).origin;
@@ -90,6 +105,7 @@ export function portableRow(table: BackupTable, value: unknown): Row {
       if (r.imageCount !== undefined) { result.imageCount = number(r.imageCount); if ((result.imageCount as number) > 3) throw new Error('报告图像数量无效。'); }
       // Regenerate Markdown from redacted structured fields so escaping cannot hide credentials.
       if (result.report) result.content = markdown(result.report as Report, result.model as string || '模型未记录', result.createdAt as number);
+      if (result.skillReport) result.content = skillMarkdown(result.skillReport as SkillReport, result.template as Skill, result.model as string || '模型未记录', result.createdAt as number);
       return result;
     }
     case 'projects': return { id: key, title: txt(r.title), noteIds: ids(r.noteIds), ...dates() };
@@ -110,11 +126,12 @@ export function references(table: BackupTable, row: Row): [BackupTable, string][
 }
 export function parseManifest(value: unknown): Manifest {
   const r = object(value);
-  if (r.format !== 'IdeaClip' || r.formatVersion !== 1 || typeof r.databaseVersion !== 'number' || !Number.isInteger(r.databaseVersion) || r.databaseVersion < 1 || r.databaseVersion > 8) throw new Error('备份格式或数据库版本不兼容，请使用支持该版本的 IdeaClip。');
+  if (r.format !== 'IdeaClip' || ![1, 2].includes(r.formatVersion as number) || typeof r.databaseVersion !== 'number' || !Number.isInteger(r.databaseVersion) || r.databaseVersion < 1 || r.databaseVersion > 9) throw new Error('备份格式或数据库版本不兼容，请使用支持该版本的 IdeaClip。');
   const createdAt = text(r.createdAt, 100); if (!Number.isFinite(Date.parse(createdAt))) throw new Error('备份创建时间无效。');
   const counts = emptyCounts(); const source = object(r.counts); let total = 0;
-  for (const table of TABLES) { counts[table] = number(source[table]); total += counts[table]; }
+  for (const table of TABLES) { counts[table] = table === 'aiTemplates' && r.formatVersion === 1 && r.databaseVersion <= 8 && source[table] === undefined ? 0 : number(source[table]); total += counts[table]; }
+  if (counts.aiTemplates > 105) throw new Error('备份模板数量超过安全上限。');
   if (total > 100000) throw new Error('备份记录超过 10 万条安全上限。');
   const entries = array(r.entries).map(value => { const e = object(value); const hash = text(e.sha256, 64); if (!/^[a-f0-9]{64}$/.test(hash)) throw new Error('备份校验和无效。'); return { name: text(e.name, 96), size: number(e.size), sha256: hash }; });
-  return { format: 'IdeaClip', formatVersion: 1, databaseVersion: r.databaseVersion, createdAt, counts, entries };
+  return { format: 'IdeaClip', formatVersion: r.formatVersion as 1 | 2, databaseVersion: r.databaseVersion, createdAt, counts, entries };
 }

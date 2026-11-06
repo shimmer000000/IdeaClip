@@ -14,7 +14,8 @@ test.beforeAll(async () => {
     response.setHeader('Access-Control-Allow-Origin', '*'); response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type'); response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS'); response.setHeader('Access-Control-Allow-Private-Network', 'true');
     if (request.method === 'OPTIONS') { response.writeHead(204).end(); return; }
     if (request.method !== 'POST') { response.setHeader('Content-Type', 'text/html; charset=utf-8'); const text = request.url?.includes('low-quality') ? '只有产品简介' : qualityText; response.end('<!doctype html><meta charset="utf-8"><title>公开 SaaS 工具</title><main><h1>SaaS 商业工具</h1><p>' + text.replaceAll('\n', '</p><p>') + '</p><p style="display:none">hidden-test-secret</p><textarea>typed-test-secret</textarea></main>' + (request.url?.includes('password') ? '<input type="password" aria-label="密码">' : '')); return; }
-    let body = ''; request.on('data', chunk => { body += chunk; }); request.on('end', () => { calls.push({ body, authorization: request.headers.authorization ?? '' }); if (hold) { held.push(response); return; } response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify(mockCompletion())); });
+    let body = ''; request.on('data', chunk => { body += chunk; }); request.on('end', () => { calls.push({ body, authorization: request.headers.authorization ?? '' }); if (hold) { held.push(response); return; } response.setHeader('Content-Type', 'application/json'); const system = JSON.parse(body).messages[0].content as string; const schema = JSON.parse(system.slice(system.indexOf('Schema：') + 7));
+      response.end(JSON.stringify(mockCompletion({ schemaVersion: schema.properties.schemaVersion.const, sections: Object.fromEntries(schema.properties.sections.required.map((key: string) => [key, [{ kind: 'hypothesis', text: '基于本机 Mock 的验证假设，先访谈再测试。', evidence: null }]])) }))); });
   }); await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve)); base = `http://127.0.0.1:${(server.address() as { port: number }).port}`; endpoint = base + '/v1/chat/completions';
 });
 test.afterAll(async () => { held.forEach(response => response.destroy()); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
@@ -161,4 +162,14 @@ test('浏览辅助本地提示不上传不保存，真实点击后编辑并明�
 test('敏感 DOM 不显示建议，撤销本地辅助后移除已注入提示，不发送 AI 请求', async () => {
   await configure(); await mockAssistRegistration(); await automatic('assist', false); const password = await harness.context.newPage(); await password.goto(base + '/public-password-product'); await injectAssist(password); await expect(password.locator('[data-ideaclip-assist]')).toHaveCount(0);
   const source = await harness.context.newPage(); await source.goto(base + '/public-product'); await injectAssist(source); await expect(source.locator('[data-ideaclip-assist]')).toHaveCount(1); await settings.getByLabel('分析模式', { exact: true }).selectOption('manual'); await settings.getByRole('button', { name: '保存分析模式与授权' }).click(); await expect(source.locator('[data-ideaclip-assist]')).toHaveCount(0); expect(calls).toHaveLength(0); expect(await rows()).toHaveLength(0);
+});
+
+
+test('Skills 自动授权固定默认模板，默认变更后旧任务不自动换模板或重复发送', async () => {
+  await configure(); const manager = settings.locator('.skill-manager'); await manager.getByLabel('管理模板').selectOption('builtin-lean'); await manager.getByRole('button', { name: '设为默认模板' }).click(); await expect(manager.getByRole('status')).toContainText('默认模板已更新'); await automatic();
+  await save(await editor('精益模板自动报告')); const center = await tasks(); await expect.poll(async () => (await rows())[0]?.state).toBe('done'); expect((await rows())[0].skillId).toBe('builtin-lean'); expect(calls).toHaveLength(1); expect(calls[0].body).toContain('constraints');
+  await pause(center); await save(await editor('等待旧精益模板')); await manager.getByLabel('管理模板').selectOption('builtin-codex'); await manager.getByRole('button', { name: '设为默认模板' }).click(); await expect(manager.getByRole('status')).toContainText('默认模板已更新'); await center.getByRole('button', { name: '恢复未发送任务' }).click(); await expect(center.getByRole('alert')).toContainText('模板'); expect(calls).toHaveLength(1);
+  await automatic(); await center.getByRole('button', { name: '恢复未发送任务' }).click(); await expect.poll(async () => (await rows()).find(r => r.state === 'paused')?.errorCode).toBe('template'); expect(calls).toHaveLength(1);
+  await save(await editor('新 Codex 模板报告')); await expect.poll(async () => (await rows()).filter(r => r.state === 'done').length).toBe(2); expect(calls).toHaveLength(2); expect(calls[1].body).toContain('developmentPrompt');
+  const reportEvent = harness.context.waitForEvent('page'); await center.locator('.task-row').filter({ hasText: '新 Codex 模板报告' }).getByRole('link', { name: '查看分析结果' }).click(); const report = await reportEvent; await expect(report.locator('.ai-report')).toContainText('完整中文开发指令');
 });

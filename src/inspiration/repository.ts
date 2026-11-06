@@ -98,7 +98,7 @@ export async function storeDraftScreenshot(id: string, screenshot: Screenshot, d
 }
 export async function commitDraft(id: string, saveState: 'draft' | 'saved', expectedInput?: NoteInput, database = db, options: { assisted?: boolean } = {}) {
   let taskId: string | null = null;
-  const result = await database.transaction('rw', [database.notes, database.noteCatalog, database.noteSearch, database.libraryState, database.noteDrafts, database.draftCatalog, database.screenshots, database.contentCaptures, database.autoPolicy, database.aiTasks, database.aiConfig, database.settings], async () => {
+  const result = await database.transaction('rw', [database.notes, database.noteCatalog, database.noteSearch, database.libraryState, database.noteDrafts, database.draftCatalog, database.screenshots, database.contentCaptures, database.autoPolicy, database.aiTasks, database.aiConfig, database.settings, database.aiTemplates, database.skillPreferences], async () => {
     const draft = await database.noteDrafts.get(id); if (!draft) throw new Error('草稿不存在或已删除，不能保存。');
     if (expectedInput && !equal(draft.input, expectedInput)) throw new Error('内容刚刚更新，请核对当前预览后再次保存。');
     if (draft.pendingCaptureId) throw new Error('还有待确认的正文采集，请先采用或忽略本次采集。');

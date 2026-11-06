@@ -1,3 +1,5 @@
+import type { Skill } from './skills/model';
+import type { SkillPreferences } from './skills/repository';
 import Dexie, { type Table } from 'dexie';
 import type { ContentCapture } from './collection/model';
 import { noteDefaults, type NoteDetails, type NoteDraft } from './inspiration/model';
@@ -22,7 +24,7 @@ export interface Note extends NoteDetails {
   updatedAt: number;
 }
 export interface Settings { id: 'general'; aiEnabled: boolean }
-export interface Analysis { id: string; noteId: string; createdAt: number; content: string; report?: Report; model?: string; provider?: string; endpointOrigin?: string; inputDigest?: string; inputRevision?: number; imageCount?: number }
+export interface Analysis { id: string; noteId: string; createdAt: number; content: string; report?: Report; skillReport?: import('./skills/model').SkillReport; template?: Skill; sourceUrl?: string; model?: string; provider?: string; endpointOrigin?: string; inputDigest?: string; inputRevision?: number; imageCount?: number }
 export interface Project { id: string; title: string; noteIds: string[]; createdAt: number; updatedAt: number }
 export interface Screenshot {
   id: string;
@@ -54,6 +56,8 @@ export class IdeaClipDB extends Dexie {
   aiUsage!: Table<AIUsage, string>;
   autoPolicy!: Table<AutoPolicy, string>;
   aiTasks!: Table<AITask, string>;
+  aiTemplates!: Table<Skill, string>;
+  skillPreferences!: Table<SkillPreferences, string>;
   constructor(name = 'ideaclip') {
     super(name);
     this.version(1).stores({
@@ -79,6 +83,7 @@ export class IdeaClipDB extends Dexie {
     this.version(7).stores({ autoPolicy: 'id', aiTasks: 'id, &dedupeKey, state, createdAt, [state+createdAt], noteId, attemptId' });
     // Optional capture quality/provenance fields. Old records remain untouched and unverified.
     this.version(8).stores({});
+    this.version(9).stores({ aiTemplates: 'id, updatedAt', skillPreferences: 'id' });
   }
 }
 export const db = new IdeaClipDB();
@@ -112,7 +117,7 @@ export async function createNote(input: NoteInput, database = db): Promise<strin
   const now = Date.now();
   const note: Note = { ...noteDefaults(clean.url), ...clean, id: crypto.randomUUID(), status: 'inbox', revision: 1, createdAt: now, updatedAt: now };
   let taskId: string | null = null;
-  await database.transaction('rw', [database.notes, database.noteCatalog, database.noteSearch, database.libraryState, database.autoPolicy, database.aiTasks, database.aiConfig, database.settings, database.contentCaptures], async () => { await database.notes.add(note); await writeNoteIndex(note, database); taskId = await enqueueSavedNote(note, database); });
+  await database.transaction('rw', [database.notes, database.noteCatalog, database.noteSearch, database.libraryState, database.autoPolicy, database.aiTasks, database.aiConfig, database.settings, database.contentCaptures, database.aiTemplates, database.skillPreferences], async () => { await database.notes.add(note); await writeNoteIndex(note, database); taskId = await enqueueSavedNote(note, database); });
   if (taskId) wakeQueue();
   return note.id;
 }
@@ -120,7 +125,7 @@ export async function updateNote(id: string, input: NoteInput & { status: NoteSt
   const clean = cleanInput(input);
   if (!['inbox', 'incubating', 'archived'].includes(input.status)) throw new Error('无效的灵感状态。');
   let taskId: string | null = null;
-  await database.transaction('rw', [database.notes, database.noteCatalog, database.noteSearch, database.libraryState, database.autoPolicy, database.aiTasks, database.aiConfig, database.settings, database.contentCaptures], async () => {
+  await database.transaction('rw', [database.notes, database.noteCatalog, database.noteSearch, database.libraryState, database.autoPolicy, database.aiTasks, database.aiConfig, database.settings, database.contentCaptures, database.aiTemplates, database.skillPreferences], async () => {
     const previous = await database.notes.get(id);
     if (!previous) throw new Error('这条灵感已不存在，请刷新列表。');
     await database.notes.update(id, { ...clean, status: input.status, revision: (previous.revision ?? 0) + 1, updatedAt: Date.now() });

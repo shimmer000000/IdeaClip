@@ -5,6 +5,7 @@ import { digest } from '../backup/zip';
 import { DEFAULT_POLICY, QueueFailure, sourceProblem, parseHosts, sourceOrigins, type AutoPolicy, type AITask, type AutomaticAuthority } from './model';
 import { signalQueue } from './signals';
 import { captureAllowsAuto } from '../collection/quality';
+import { bindingValid } from '../skills/repository';
 
 export const snapshotHash = (note: Note) => digest(new Blob([JSON.stringify({ title: note.title, content: note.content, body: note.body, url: note.url, revision: note.revision, updatedAt: note.updatedAt })]));
 export async function automaticContentProblem(note: Note, database: IdeaClipDB): Promise<string> {
@@ -24,7 +25,10 @@ export async function enqueueSavedNote(note: Note, database: IdeaClipDB, assiste
   if (await database.aiTasks.where('state').anyOf('waiting', 'paused', 'running').count() >= 1000) throw new Error('自动队列达到 1000 条上限，请先整理任务再保存；编辑内容仍保留。');
   const denied = sourceProblem(note, policy); const config = await database.aiConfig.get('manual'); const stale = config?.version !== policy.configVersion;
   const qualityProblem = denied ? '' : await automaticContentProblem(note, database);
+  const templateProblem = !await bindingValid(policy, database);
   const now = Date.now(); const task: AITask = { id: crypto.randomUUID(), dedupeKey, noteId: note.id, revision: note.revision, snapshotHash: await Dexie.waitFor(snapshotHash(note)), state: denied ? 'cancelled' : policy.paused || stale || qualityProblem ? 'paused' : 'waiting', reason: denied || qualityProblem || (stale ? '服务商配置变化，需重新确认自动授权。' : policy.paused ? policy.reason || '自动队列已暂停。' : ''), errorCode: denied ? 'source' : qualityProblem ? 'quality' : stale ? 'config' : '', source: assisted ? 'assist' : 'save', consentId: policy.consentId, sessionId: policy.sessionId, createdAt: now, updatedAt: now, attemptId: null, lastAttemptId: null, resultId: null, feeUnknown: false, execution: 'auto' };
+  Object.assign(task, { skillId: policy.skillId, skillVersion: policy.skillVersion, skillSignature: policy.skillSignature });
+  if (templateProblem && !denied) Object.assign(task, { state: 'paused', errorCode: 'template', reason: '默认模板或版本未授权，请在设置页重新确认；旧任务不会自动改用新模板。' });
   await database.aiTasks.add(task); return task.id;
 }
 export async function assertSnapshot(task: AITask, database: IdeaClipDB): Promise<Note> {
@@ -35,6 +39,7 @@ export async function assertSnapshot(task: AITask, database: IdeaClipDB): Promis
 export async function authorizeAutomatic(preview: Preview, authority: AutomaticAuthority, database: IdeaClipDB): Promise<void> {
   const policy = await database.autoPolicy.get('general'); const task = await database.aiTasks.get(authority.taskId);
   if (!policy || !(await database.settings.get('general'))?.aiEnabled || (!authority.manualRetry && (!policy.autoEnabled || policy.mode === 'manual' || policy.paused))) throw new QueueFailure('paused', '自动分析已暂停或关闭。');
+  if (!authority.manualRetry && (!await bindingValid(policy, database) || task?.skillId !== preview.template.id || task?.skillVersion !== preview.template.version || task?.skillSignature !== policy.skillSignature)) throw new QueueFailure('template', '分析模板授权失效，请重新确认；不会替换旧任务模板。');
   if (!task || task.state !== 'running' || task.execution !== (authority.manualRetry ? 'manual' : 'auto') || task.attemptId !== preview.id || task.noteId !== preview.noteId || task.consentId !== authority.consentId || policy.consentId !== authority.consentId || task.sessionId !== authority.sessionId || (!authority.manualRetry && policy.sessionId !== authority.sessionId)) throw new QueueFailure('consent', '自动任务或本浏览器会话授权失效，需人工恢复。');
   if (preview.imageIds.length || (!authority.manualRetry && (policy.configVersion !== preview.config.version || policy.credentialVersion !== authority.credentialVersion || preview.costMicros > policy.perTaskMicros || Math.floor(preview.config.dailyBudgetUsd * 1000000) > policy.dailyBudgetMicros || (policy.mode === 'assist' && task.source !== 'assist')))) throw new QueueFailure('consent', '配置、凭据、图像范围或费用超过已确认的自动授权。');
   // Uses waitFor only inside the short budget transaction; no network is awaited there.
@@ -54,7 +59,8 @@ export async function savePolicy(policy: AutoPolicy, database: IdeaClipDB, confi
   const allowHosts = parseHosts(policy.allowHosts.join('\n')); const denyHosts = parseHosts(policy.denyHosts.join('\n'));
   if (!['manual', 'after-save', 'assist'].includes(policy.mode) || (policy.mode === 'manual' && policy.autoEnabled)) throw new Error('分析模式无效。');
   if (policy.autoEnabled && (!confirmed || !policy.consentId || !policy.configVersion || !policy.sessionId || (!allowHosts.length && !policy.allowManual) || (policy.mode === 'assist' && !allowHosts.length) || policy.perTaskMicros < 1 || policy.dailyBudgetMicros < policy.perTaskMicros || !Number.isSafeInteger(policy.perTaskMicros) || !Number.isSafeInteger(policy.dailyBudgetMicros))) throw new Error('自动分析必须明确确认发送范围、单次上限和每日预算。');
-  await database.transaction('rw', [database.autoPolicy, database.aiTasks], async () => {
+  await database.transaction('rw', [database.autoPolicy, database.aiTasks, database.aiTemplates, database.skillPreferences], async () => {
+    if (policy.autoEnabled && !await bindingValid(policy, database)) throw new Error('默认模板或版本未明确授权，请重新确认自动模式。');
     await database.autoPolicy.put({ ...DEFAULT_POLICY, ...policy, allowHosts, denyHosts, id: 'general' });
     await database.aiTasks.where('state').equals('waiting').modify({ state: 'paused', reason: '自动授权已更新，请在任务中心人工恢复原等待任务。', updatedAt: Date.now() });
   }); signalQueue();

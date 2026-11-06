@@ -54,7 +54,7 @@ export async function exportBackup(database = db, options: OperationOptions = {}
   });
   if (linked.some(key => !keys.has(key))) throw new Error('当前数据存在缺失的笔记、采集或截图关联，无法生成可完整恢复的备份。原数据未更改。');
   if (Object.values(counts).reduce((a, b) => a + b, 0) > 100000) throw new Error('备份超过 10 万条记录安全上限。');
-  const manifest: Manifest = { format: 'IdeaClip', formatVersion: 1, databaseVersion: database.verno, createdAt: new Date().toISOString(), counts, entries: [] };
+  const manifest: Manifest = { format: 'IdeaClip', formatVersion: 2, databaseVersion: database.verno, createdAt: new Date().toISOString(), counts, entries: [] };
   for (const [index, entry] of entries.entries()) { check(options); options.progress?.(`正在校验备份 ${index + 1}/${entries.length}`); manifest.entries.push({ name: entry.name, size: entry.blob.size, sha256: await digest(entry.blob) }); }
   entries.push({ name: 'manifest.json', blob: new Blob([JSON.stringify(manifest)]) });
   return writeZip(entries, completed => { check(options); options.progress?.(`正在封装 ZIP ${completed}/${entries.length}`); });
@@ -213,6 +213,8 @@ export async function restoreBackup(prepared: PreparedBackup, mode: 'merge' | 'r
         }
         options.progress?.(`正在恢复：写入 ${result.succeeded}，跳过 ${result.skipped}`);
       }, true);
+      const pref = await database.skillPreferences.get('general');
+      await database.skillPreferences.put({ id: 'general', defaultId: pref?.defaultId ?? 'builtin-business', version: crypto.randomUUID() });
       check(options); await database.libraryState.put({ id: 'notes', revision: revision + 1 });
     });
   } catch (error) { throw new Error(`恢复失败，成功 0 条，失败 ${Object.values(prepared.summary.counts).reduce((a, b) => a + b, 0)} 条；全部写入已回滚，原数据库未更改。${friendlyError(error)}`); }

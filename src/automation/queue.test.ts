@@ -1,3 +1,5 @@
+import { BUILTINS, skillSignature } from '../skills/model';
+import { copySkill, defaultBinding, saveSkill, setDefaultSkill } from '../skills/repository';
 import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IdeaClipDB, setAIEnabled, type Note } from '../storage';
@@ -18,7 +20,7 @@ let database: IdeaClipDB; const executors: QueueExecutor[] = []; const engines: 
 const endpoint = 'http://127.0.0.1:45555/v1/chat/completions';
 const credential = { version: 'key-version', value: 'synthetic-queue-credential', endpoint, persistent: false };
 const config = { ...DEFAULT_CONFIG, version: 'config-version', provider: 'custom' as const, endpoint, model: 'mock', timeoutMs: 1000, dailyBudgetUsd: 1, inputUsdPerMillion: 1, outputUsdPerMillion: 1 };
-const policy = (): AutoPolicy => ({ ...DEFAULT_POLICY, mode: 'after-save', autoEnabled: true, allowHosts: ['example.com'], consentId: 'consent', configVersion: config.version, credentialVersion: credential.version, sessionId: 'session', perTaskMicros: 1000000, dailyBudgetMicros: 1000000, acceptedAt: Date.now() });
+const policy = (): AutoPolicy => ({ ...DEFAULT_POLICY, skillId: BUILTINS[0].id, skillVersion: BUILTINS[0].version, skillSignature: skillSignature(BUILTINS[0]), skillPreferenceVersion: 'initial', mode: 'after-save', autoEnabled: true, allowHosts: ['example.com'], consentId: 'consent', configVersion: config.version, credentialVersion: credential.version, sessionId: 'session', perTaskMicros: 1000000, dailyBudgetMicros: 1000000, acceptedAt: Date.now() });
 const immediate: TaskLock = async (_name, action) => action();
 function executor(fetcher = vi.fn(async () => Response.json(mockCompletion())), extras: Partial<ConstructorParameters<typeof AIEngine>[1]> = {}, lock = immediate) {
   const engine = new AIEngine(database, { permission: async () => true, credential: async () => credential, transport: chatTransport(fetcher as typeof fetch), lock: async action => action(), ...extras }); engines.push(engine);
@@ -75,6 +77,21 @@ describe('主动保存、范围授权与事务队列', () => {
 });
 
 describe('执行、快照、预算和取消', () => {
+  it('自动任务固定已确认的默认模板并保存该结构，模板修改使旧任务失效而不换版本', async () => {
+    const skill = await copySkill(BUILTINS[1], database); await setDefaultSkill(skill.id, database);
+    await savePolicy({ ...policy(), ...await defaultBinding(database), consentId: 'template-consent' }, database, true);
+    const saved = await note(); expect(saved.task).toMatchObject({ skillId: skill.id, skillVersion: skill.version });
+    const data = { schemaVersion: 2, sections: Object.fromEntries(skill.sections.map(s => [s.key, [{ kind: 'hypothesis', text: '先访谈用户验证', evidence: null }]])) };
+    const e = executor(vi.fn(async () => Response.json(mockCompletion(data)))); await e.service.execute(saved.task.id, 'session'); expect(e.fetcher).toHaveBeenCalledTimes(1); expect((await database.analyses.toArray())[0].template?.id).toBe(skill.id);
+    await pauseAutomatic('暂停', database); const waiting = await note(); const updated = await saveSkill({ ...skill, prompt: '修改后的模板偏好' }, database, skill.version);
+    await expect(resumeWaiting('session', database)).rejects.toThrow('模板');
+    await savePolicy({ ...policy(), ...await defaultBinding(database), consentId: 'new-template-consent' }, database, true);
+    const resumed = await resumeWaiting('session', database); expect(resumed.resumed).toBe(0); expect((await database.aiTasks.get(waiting.task.id))?.skillVersion).toBe(skill.version); expect(updated.version).not.toBe(skill.version); expect((await database.aiTasks.get(waiting.task.id))?.errorCode).toBe('template'); expect(e.fetcher).toHaveBeenCalledTimes(1);
+  });
+  it('升级前未绑定模板的等待任务保留，但不能借恢复取得新模板授权', async () => {
+    await pauseAutomatic('暂停', database); const saved = await note(); await database.aiTasks.update(saved.task.id, { skillId: undefined, skillVersion: undefined, skillSignature: undefined });
+    expect((await resumeWaiting('session', database)).resumed).toBe(0); expect((await database.aiTasks.get(saved.task.id))?.state).toBe('paused'); expect((await database.aiTasks.get(saved.task.id))?.errorCode).toBe('template');
+  });
   it.each(['missing', 'partial', 'edited', 'backup'])('入队后采集 %s 使自动执行暂停，恢复不能绕过质量门禁', async change => {
     await pauseAutomatic('待校验', database); const saved = await note(); const record = (await database.notes.get(saved.id))!; const id = record.captureIds[0];
     const capture = (await database.contentCaptures.get(id))!;
@@ -176,6 +193,6 @@ describe('schema v7 与备份兼容', () => {
   it('schema6 升级7保留笔记、原图、分析、配置和账本，不自动授权', async () => {
     const old = new Dexie('automation-migrate-' + crypto.randomUUID()); await database.open(); const schema = Object.fromEntries(database.tables.filter(t => !['autoPolicy', 'aiTasks'].includes(t.name)).map(t => [t.name, [t.schema.primKey.src, ...t.schema.indexes.map(i => i.src)].join(', ')])); old.version(6).stores(schema);
     await old.table('notes').put({ id: 'old', title: '旧笔记', body: '旧感悟' } as Note); await old.table('screenshots').put({ id: 'pic', blob: new Blob(['old-image']) }); await old.table('analyses').put({ id: 'report', noteId: 'old', createdAt: 1, content: '旧报告' }); await old.table('aiConfig').put(config); await old.table('aiUsage').put({ id: 'budget', reservedMicros: 100 }); old.close();
-    const upgraded = new IdeaClipDB(old.name); try { await upgraded.open(); expect(upgraded.verno).toBe(8); expect((await upgraded.notes.get('old'))?.body).toBe('旧感悟'); expect(await (await upgraded.screenshots.get('pic'))!.blob.text()).toBe('old-image'); expect((await upgraded.analyses.get('report'))?.content).toBe('旧报告'); expect(await upgraded.aiConfig.count()).toBe(1); expect(await upgraded.aiUsage.count()).toBe(1); expect(await upgraded.autoPolicy.count()).toBe(0); expect(await upgraded.aiTasks.count()).toBe(0); } finally { await upgraded.delete(); }
+    const upgraded = new IdeaClipDB(old.name); try { await upgraded.open(); expect(upgraded.verno).toBe(9); expect((await upgraded.notes.get('old'))?.body).toBe('旧感悟'); expect(await (await upgraded.screenshots.get('pic'))!.blob.text()).toBe('old-image'); expect((await upgraded.analyses.get('report'))?.content).toBe('旧报告'); expect(await upgraded.aiConfig.count()).toBe(1); expect(await upgraded.aiUsage.count()).toBe(1); expect(await upgraded.autoPolicy.count()).toBe(0); expect(await upgraded.aiTasks.count()).toBe(0); } finally { await upgraded.delete(); }
   });
 });
