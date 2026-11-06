@@ -14,6 +14,8 @@ function LocalImage({ id }: { id: string }) {
 }
 
 function EditorForm({ draft }: { draft: NoteDraft }) {
+  const autoPolicy = useLiveQuery(() => db.autoPolicy.get('general'));
+  const [assistSave, setAssistSave] = useState(false);
   const form = useDraft(draft);
   const { input, change } = form;
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
@@ -38,7 +40,7 @@ function EditorForm({ draft }: { draft: NoteDraft }) {
   }
   function save(saveState: 'draft' | 'saved') {
     void run(async () => {
-      await commitDraft(draft.id, saveState, form.local.current);
+      await commitDraft(draft.id, saveState, form.local.current, db, { assisted: assistSave });
       form.setStatus(saveState === 'saved' ? '已保存灵感，全部内容已关联到同一条笔记' : '已保存草稿，可稍后继续编辑');
     });
   }
@@ -92,7 +94,7 @@ function EditorForm({ draft }: { draft: NoteDraft }) {
       <label htmlFor="idea-status">整理状态</label><select id="idea-status" value={input.status} onChange={e => change('status', e.target.value as typeof input.status)}><option value="inbox">收集箱</option><option value="incubating">孵化中</option><option value="archived">已归档</option></select>
       <label className="favorite-toggle"><input type="checkbox" checked={input.favorite} onChange={e => change('favorite', e.target.checked)} />标记收藏</label>
     </section>
-    <div className="note-editor-footer">{note?.saveState === "saved" && <a href={`analysis.html?noteId=${encodeURIComponent(note.id)}`} target="_blank" rel="noreferrer">AI 分析与历史</a>}<div className="actions"><button disabled={busy} onClick={() => save('draft')}>保存草稿</button><button className="primary" disabled={busy} onClick={() => save('saved')}>{busy ? '处理中…' : '保存灵感'}</button><button disabled={busy} className="danger" onClick={() => { void remove(); }}>删除笔记</button></div><p className="muted">创建：{new Date(note?.createdAt ?? draft.createdAt).toLocaleString('zh-CN')} · 更新：{new Date(note?.updatedAt ?? draft.updatedAt).toLocaleString('zh-CN')} · AI 仅在另行确认发送后分析已保存内容。</p></div>
+    <section className="panel"><h2>保存与分析模式</h2><p>当前模式：{autoPolicy?.mode === "after-save" && autoPolicy.autoEnabled ? "保存后按已授权范围自动入队（不发送截图）" : autoPolicy?.mode === "assist" ? "浏览辅助，须主动确认本条入队" : "手动分析，保存不触发 AI"}。暂停时新任务保留为暂停，敏感来源或黑名单会阻止发送。</p>{autoPolicy?.mode === "assist" && <label className="check-line"><input type="checkbox" checked={assistSave} disabled={!autoPolicy.autoEnabled} onChange={event => setAssistSave(event.target.checked)} />本条保存灵感后按已授权范围加入 AI 队列（不含截图）</label>}<a href="tasks.html" target="_blank" rel="noreferrer">查看 AI 任务中心</a></section><div className="note-editor-footer">{note?.saveState === "saved" && <a href={`analysis.html?noteId=${encodeURIComponent(note.id)}`} target="_blank" rel="noreferrer">AI 分析与历史</a>}<div className="actions"><button disabled={busy} onClick={() => save('draft')}>保存草稿</button><button className="primary" disabled={busy} onClick={() => save('saved')}>{busy ? '处理中…' : '保存灵感'}</button><button disabled={busy} className="danger" onClick={() => { void remove(); }}>删除笔记</button></div><p className="muted">创建：{new Date(note?.createdAt ?? draft.createdAt).toLocaleString('zh-CN')} · 更新：{new Date(note?.updatedAt ?? draft.updatedAt).toLocaleString('zh-CN')} · AI 仅按当前已授权模式处理已保存内容。</p></div>
   </>;
 }
 

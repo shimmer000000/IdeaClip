@@ -1,5 +1,6 @@
 import Dexie from 'dexie';
 import { announceAIChange } from '../ai/events';
+import { pauseAutomatic } from '../automation/policy';
 import { db, type IdeaClipDB, type Note } from '../storage';
 import type { NoteDraft } from '../inspiration/model';
 import { cardOf, searchOf, draftCardOf } from '../library/projections';
@@ -160,6 +161,7 @@ export async function restoreBackup(prepared: PreparedBackup, mode: 'merge' | 'r
   prepared.assertUsable();
   if (mode !== 'merge' && mode !== 'replace') throw new Error('恢复方式无效。');
   if (mode === 'replace' && !options.confirmed) throw new Error('完整替换必须二次确认。');
+  await pauseAutomatic('恢复数据库前暂停自动队列，请在恢复后核对快照并人工恢复。', database);
   announceAIChange();
   const result: RestoreResult = { succeeded: 0, skipped: 0, failed: 0, duplicates: 0, conflicts: 0 };
   try {

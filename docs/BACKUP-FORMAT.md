@@ -22,7 +22,7 @@ images/000001.webp
 `manifest.json` 包含：
 
 - `format: "IdeaClip"`、`formatVersion: 1`。
-- `databaseVersion`：导出时 schema 版本，当前 6；导入支持 1 至 6，拒绝未来版本。
+- `databaseVersion`：导出时 schema 版本，当前 7；导入支持 1 至 7，拒绝未来版本。
 - `createdAt`：ISO 备份创建时间。
 - `counts`：七个业务表的完整记录数，包括 0。
 - `entries`：除清单自身外每项的 `name`、字节数 `size`、小写十六进制 `sha256`。
@@ -37,11 +37,13 @@ ZIP 还提供每项 CRC32。校验和用于发现传输损坏，不能证明来�
 
 浏览器标签 ID 不可跨浏览器复用：笔记、草稿及采集的 `sourceTabId` 置空，截图置 0。用户从原网页重新连接后继续截图。不导出 `noteCatalog`、`noteSearch`、`draftCatalog`、`libraryState`、`screenshotThumbs`，恢复时重建目录、搜索和未提交编辑索引，缩略图按需生成。
 
-schema 1 至 3 的早期笔记缺省字段通过当前默认模型补齐，旧 `body` 不迁移为正文。主数据库由 Dexie 的 v1 至 v6 迁移链升级，备份功能不重置现有主数据库。
+schema 1 至 3 的早期笔记缺省字段通过当前默认模型补齐，旧 `body` 不迁移为正文。主数据库由 Dexie 的 v1 至 v7 迁移链升级，备份功能不重置现有主数据库。
 
 IC-007 增量升级到 schema v6，保留旧数据并增加 AI 配置、用量表及分析历史复合索引。`analyses` 的可选字段包含 `report`（15 栏结构化 JSON）、`model`、`provider`、`endpointOrigin`、`inputDigest`、`inputRevision`、`imageCount`。结构化报告先做 Schema 校验，再逐字段脱敏，从脱敏报告重新生成 Markdown，避免 Markdown 转义隐藏令牌。旧 `content` 纯文本报告继续兼容。
 
 `aiConfig`、Chrome 会话/本地凭据、`aiUsage` 不导出。恢复到新设备须重新配置、授权服务商；完整替换保留本设备 AI 配置和预算账本，不能借由恢复重置本地每日预算。恢复动作会通知 AI 引擎取消未完成请求和排队任务，已发送请求仍可能计费。
+
+IC-008 的 schema v7 新增本设备自动授权与任务表，不改变上述七表文件格式。`autoPolicy` / `aiTasks` 不导出，不随备份启用自动请求；恢复前暂停队列，替换保留这些表及当前 AI 配置、账本。恢复后人工恢复仅限尚未发送且快照/来源/权限仍有效的任务；费用未知、已失败或已取消任务不自动执行。
 
 ## 合并与替换
 

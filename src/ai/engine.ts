@@ -5,6 +5,8 @@ import { digest } from '../backup/zip';
 import { getCredential, hasPermission, validateConfig, type AIConfig } from './config';
 import { markdown, SYSTEM_PROMPT, validateReport } from './report';
 import { chatTransport, RequestFailure, type AITransport, type Completion } from './transport';
+import { authorizeAutomatic } from '../automation/policy';
+import { QueueFailure, type AutomaticAuthority } from '../automation/model';
 
 export interface AIUsage { id: string; noteId: string; day: string; createdAt: number; model: string; status: 'reserved' | 'succeeded' | 'failed' | 'cancelled'; reservedMicros: number; estimatedInput: number; maxOutput: number; inputTokens?: number; outputTokens?: number; errorCode?: string }
 export interface Preview { id: string; noteId: string; createdAt: number; config: AIConfig; title: string; content: string; body: string; url: string; imageIds: string[]; inputTokensUpper: number; costMicros: number; inputDigest: string; revision: number }
@@ -54,14 +56,21 @@ export class AIEngine {
     // Return a detached value: callers cannot change the internally confirmed payload.
     return structuredClone(preview);
   }
-  async run(previewId: string): Promise<AnalysisResult> {
+  async run(previewId: string, authority?: AutomaticAuthority): Promise<AnalysisResult> {
     const prepared = this.previews.get(previewId); this.previews.delete(previewId);
     if (!prepared) throw new RequestFailure('consent', '本次确认已使用或失效，请重新预览并确认费用。');
     const { preview, images, source } = prepared; const controller = new AbortController(); this.pending.set(previewId, controller);
     let usage: AIUsage | null = null; let reserved = false; let timer: ReturnType<typeof setTimeout> | undefined; let timedOut = false;
+    const checkAuthority = async () => {
+      if (!authority) return;
+      if (!authority.manualRetry && prepared.credentialVersion !== authority.credentialVersion) throw new RequestFailure('consent', '自动授权的凭据已改变，请重新确认。');
+      try { await authorizeAutomatic(preview, authority, this.database); }
+      catch (error) { if (error instanceof QueueFailure) throw new RequestFailure(error.code, error.message); throw error; }
+    };
     try {
       return await this.dependencies.lock(async () => {
         await this.gate(); active(controller.signal);
+        await checkAuthority();
         const current = await this.database.aiConfig.get('manual');
         if (!current || current.version !== preview.config.version || this.dependencies.now() - preview.createdAt > 10 * 60000) throw new RequestFailure('stale', '配置已改变或确认超过 10 分钟，请重新预览。');
         const credential = await this.dependencies.credential(preview.config.endpoint);
@@ -70,8 +79,9 @@ export class AIEngine {
         if (!note || note.revision !== preview.revision || (await this.database.noteDrafts.get(preview.noteId))?.hasChanges) throw new RequestFailure('stale', '笔记已改变，请重新核对发送内容。');
         const now = this.dependencies.now(); const day = new Date(now).toISOString().slice(0, 10);
         usage = { id: preview.id, noteId: preview.noteId, day, createdAt: now, model: preview.config.model, status: 'reserved', reservedMicros: preview.costMicros, estimatedInput: preview.inputTokensUpper, maxOutput: preview.config.maxOutput };
-        await this.database.transaction('rw', [this.database.aiUsage, this.database.settings, this.database.aiConfig], async () => {
+        await this.database.transaction('rw', [this.database.aiUsage, this.database.settings, this.database.aiConfig, ...(authority ? [this.database.autoPolicy, this.database.aiTasks, this.database.notes, this.database.noteDrafts] : [])], async () => {
           await this.gate(); const latest = await this.database.aiConfig.get('manual'); if (latest?.version !== preview.config.version) throw new RequestFailure('stale', '配置已改变，请重新确认。');
+          await checkAuthority();
           const rows = await this.database.aiUsage.where('day').equals(day).toArray(); const spent = rows.reduce((sum, row) => sum + row.reservedMicros, 0);
           if (spent + preview.costMicros > Math.floor(preview.config.dailyBudgetUsd * 1000000)) throw new RequestFailure('budget', '本次预留会超过每日预算，已阻止请求；请核对预算和单价。');
           await this.database.aiUsage.add(usage!);
@@ -81,9 +91,11 @@ export class AIEngine {
         const parts: unknown[] = [{ type: 'text', text: source }];
         for (const image of images) { active(controller.signal); const bytes = new Uint8Array(await image.arrayBuffer()); let binary = ''; for (let offset = 0; offset < bytes.length; offset += 32768) binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768)); parts.push({ type: 'image_url', image_url: { url: `data:${image.type};base64,${btoa(binary)}`, detail: 'low' } }); }
         await this.gate(); active(controller.signal);
+        await checkAuthority();
         timer = setTimeout(() => { timedOut = true; controller.abort(); }, preview.config.timeoutMs);
         const completion: Completion = await this.dependencies.transport.complete(preview.config, credential?.value ?? '', [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: images.length ? parts : source }], controller.signal);
         active(controller.signal); await this.gate();
+        await checkAuthority();
         let parsed: unknown; try { parsed = JSON.parse(completion.text); } catch { throw new RequestFailure('schema', 'AI 内容不是有效 JSON；未保存报告。'); }
         let report; try { report = validateReport(parsed, [preview.title, preview.content, preview.body, preview.url].join('\n')); }
         catch { throw new RequestFailure('schema', '报告未通过 JSON Schema 或来源证据校验；未保存报告，请确认后手动重试。'); }

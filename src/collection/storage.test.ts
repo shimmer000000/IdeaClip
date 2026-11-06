@@ -14,7 +14,7 @@ describe('采集草稿与截图关联', () => {
     await legacy.table('notes').put({ id: 'old', title: '旧笔记' });
     await legacy.table('screenshots').put({ id: 'image', blob: new Blob(['old-image']), createdAt: 1 });
     await legacy.table('settings').put({ id: 'general', aiEnabled: false }); legacy.close();
-    await database.open(); expect(database.verno).toBe(6);
+    await database.open(); expect(database.verno).toBe(7);
     expect((await database.notes.get('old'))?.title).toBe('旧笔记');
     expect(await (await database.screenshots.get('image'))?.blob.text()).toBe('old-image');
     expect((await database.settings.get('general'))?.aiEnabled).toBe(false);

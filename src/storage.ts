@@ -6,6 +6,9 @@ import type { AIConfig } from './ai/config';
 import type { Report } from './ai/report';
 import type { AIUsage } from './ai/engine';
 import { announceAIChange } from './ai/events';
+import { enqueueSavedNote, pauseAutomatic } from './automation/policy';
+import { wakeQueue } from './automation/signals';
+import type { AutoPolicy, AITask } from './automation/model';
 
 export type NoteStatus = 'inbox' | 'incubating' | 'archived';
 export interface Note extends NoteDetails {
@@ -49,6 +52,8 @@ export class IdeaClipDB extends Dexie {
   screenshotThumbs!: Table<ScreenshotThumb, string>;
   aiConfig!: Table<AIConfig, string>;
   aiUsage!: Table<AIUsage, string>;
+  autoPolicy!: Table<AutoPolicy, string>;
+  aiTasks!: Table<AITask, string>;
   constructor(name = 'ideaclip') {
     super(name);
     this.version(1).stores({
@@ -71,6 +76,7 @@ export class IdeaClipDB extends Dexie {
     });
     this.version(5).stores({ noteCatalog: 'id, saveState, site, category, createdAt, updatedAt', noteSearch: 'id', draftCatalog: 'id, [pending+updatedAt]', libraryState: 'id', screenshotThumbs: 'id' }).upgrade(migrateLibrary);
     this.version(6).stores({ aiConfig: 'id', aiUsage: 'id, day, createdAt, noteId, status', analyses: 'id, noteId, createdAt, [noteId+createdAt]' });
+    this.version(7).stores({ autoPolicy: 'id', aiTasks: 'id, &dedupeKey, state, createdAt, [state+createdAt], noteId, attemptId' });
   }
 }
 export const db = new IdeaClipDB();
@@ -87,6 +93,7 @@ export async function getSettings(database = db): Promise<Settings> {
 export async function setAIEnabled(aiEnabled: boolean, database = db) {
   await database.settings.put({ id: 'general', aiEnabled });
   announceAIChange();
+  if (!aiEnabled) await pauseAutomatic('AI 总开关已关闭，等待任务已暂停。', database);
 }
 
 type NoteInput = Pick<Note, 'title' | 'url' | 'body' | 'tags'>;
@@ -102,18 +109,23 @@ export async function createNote(input: NoteInput, database = db): Promise<strin
   const clean = cleanInput(input);
   const now = Date.now();
   const note: Note = { ...noteDefaults(clean.url), ...clean, id: crypto.randomUUID(), status: 'inbox', revision: 1, createdAt: now, updatedAt: now };
-  await database.transaction('rw', [database.notes, database.noteCatalog, database.noteSearch, database.libraryState], async () => { await database.notes.add(note); await writeNoteIndex(note, database); });
+  let taskId: string | null = null;
+  await database.transaction('rw', [database.notes, database.noteCatalog, database.noteSearch, database.libraryState, database.autoPolicy, database.aiTasks, database.aiConfig, database.settings], async () => { await database.notes.add(note); await writeNoteIndex(note, database); taskId = await enqueueSavedNote(note, database); });
+  if (taskId) wakeQueue();
   return note.id;
 }
 export async function updateNote(id: string, input: NoteInput & { status: NoteStatus }, database = db) {
   const clean = cleanInput(input);
   if (!['inbox', 'incubating', 'archived'].includes(input.status)) throw new Error('无效的灵感状态。');
-  await database.transaction('rw', [database.notes, database.noteCatalog, database.noteSearch, database.libraryState], async () => {
+  let taskId: string | null = null;
+  await database.transaction('rw', [database.notes, database.noteCatalog, database.noteSearch, database.libraryState, database.autoPolicy, database.aiTasks, database.aiConfig, database.settings], async () => {
     const previous = await database.notes.get(id);
     if (!previous) throw new Error('这条灵感已不存在，请刷新列表。');
     await database.notes.update(id, { ...clean, status: input.status, revision: (previous.revision ?? 0) + 1, updatedAt: Date.now() });
     await writeNoteIndex((await database.notes.get(id))!, database);
+    taskId = await enqueueSavedNote((await database.notes.get(id))!, database);
   });
+  if (taskId) wakeQueue();
 }
 export async function deleteNote(id: string, database = db) {
   await database.transaction('rw', [database.notes, database.analyses, database.contentCaptures, database.noteDrafts, database.noteCatalog, database.noteSearch, database.draftCatalog, database.libraryState], async () => {

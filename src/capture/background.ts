@@ -4,6 +4,7 @@ import { compressCapture } from './image';
 import { installSelector } from './selector';
 import '../collection/background';
 import '../inspiration/background';
+import '../automation/background';
 import { activateDraftSource, showNoteEditor } from '../inspiration/browser';
 import { storeDraftScreenshot } from '../inspiration/repository';
 
