@@ -114,7 +114,7 @@ describe('完整灵感事务与草稿', () => {
     old.version(3).stores({ notes: 'id, url, status, createdAt, updatedAt, *tags', settings: 'id', analyses: 'id, noteId, createdAt', projects: 'id, updatedAt, *noteIds', screenshots: 'id, createdAt', contentCaptures: 'id, sourceUrl, platform, collectedAt, updatedAt, *screenshotIds' });
     const legacy = { id: 'legacy', title: '旧标题', url, body: '原有私人感悟（模拟数据）', tags: ['旧标签'], status: 'archived', createdAt: 123, updatedAt: 456 };
     await old.table('notes').put(legacy); await old.table('screenshots').put(image('old-shot')); await old.table('contentCaptures').put({ ...emptyPage(url, '旧采集', ''), id: 'old-capture', originalUrl: url, noteId: null, screenshotIds: ['old-shot'] }); await old.table('settings').put({ id: 'general', aiEnabled: true }); old.close();
-    await database.open(); expect(database.verno).toBe(5); expect(await database.notes.get('legacy')).toMatchObject({ ...legacy, content: '', saveState: 'saved', favorite: false });
+    await database.open(); expect(database.verno).toBe(6); expect(await database.notes.get('legacy')).toMatchObject({ ...legacy, content: '', saveState: 'saved', favorite: false });
     expect(await (await database.screenshots.get('old-shot'))?.blob.text()).toBe('local-image'); expect(await database.contentCaptures.count()).toBe(1); expect((await getSettings(database)).aiEnabled).toBe(true);
   });
   it('AI 默认关闭，草稿、正式保存和 AI 门禁均不发送网络请求', async () => {

@@ -1,0 +1,189 @@
+{
+  "$id": "IdeaClipReportV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "sections"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "sections": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "targetUsers",
+        "painPoints",
+        "positioning",
+        "businessModel",
+        "revenue",
+        "acquisition",
+        "advantages",
+        "costs",
+        "replicability",
+        "risks",
+        "sevenDayPlan",
+        "thirtyDayPlan",
+        "ninetyDayPlan",
+        "questions"
+      ],
+      "properties": {
+        "summary": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "targetUsers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "painPoints": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "positioning": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "businessModel": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "revenue": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "acquisition": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "advantages": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "costs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "replicability": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "risks": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "sevenDayPlan": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "thirtyDayPlan": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "ninetyDayPlan": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "questions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "text",
+        "evidence"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "fact",
+            "inference",
+            "hypothesis"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 3000
+        },
+        "evidence": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1000
+        }
+      }
+    }
+  }
+}

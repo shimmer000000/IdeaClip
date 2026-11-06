@@ -2,6 +2,10 @@ import Dexie, { type Table } from 'dexie';
 import type { ContentCapture } from './collection/model';
 import { noteDefaults, type NoteDetails, type NoteDraft } from './inspiration/model';
 import { deleteNoteIndex, migrateLibrary, writeNoteIndex, type NoteCard, type NoteSearch, type DraftCard, type LibraryState, type ScreenshotThumb } from './library/projections';
+import type { AIConfig } from './ai/config';
+import type { Report } from './ai/report';
+import type { AIUsage } from './ai/engine';
+import { announceAIChange } from './ai/events';
 
 export type NoteStatus = 'inbox' | 'incubating' | 'archived';
 export interface Note extends NoteDetails {
@@ -15,7 +19,7 @@ export interface Note extends NoteDetails {
   updatedAt: number;
 }
 export interface Settings { id: 'general'; aiEnabled: boolean }
-export interface Analysis { id: string; noteId: string; createdAt: number; content: string }
+export interface Analysis { id: string; noteId: string; createdAt: number; content: string; report?: Report; model?: string; provider?: string; endpointOrigin?: string; inputDigest?: string; inputRevision?: number; imageCount?: number }
 export interface Project { id: string; title: string; noteIds: string[]; createdAt: number; updatedAt: number }
 export interface Screenshot {
   id: string;
@@ -43,6 +47,8 @@ export class IdeaClipDB extends Dexie {
   draftCatalog!: Table<DraftCard, string>;
   libraryState!: Table<LibraryState, string>;
   screenshotThumbs!: Table<ScreenshotThumb, string>;
+  aiConfig!: Table<AIConfig, string>;
+  aiUsage!: Table<AIUsage, string>;
   constructor(name = 'ideaclip') {
     super(name);
     this.version(1).stores({
@@ -64,6 +70,7 @@ export class IdeaClipDB extends Dexie {
       });
     });
     this.version(5).stores({ noteCatalog: 'id, saveState, site, category, createdAt, updatedAt', noteSearch: 'id', draftCatalog: 'id, [pending+updatedAt]', libraryState: 'id', screenshotThumbs: 'id' }).upgrade(migrateLibrary);
+    this.version(6).stores({ aiConfig: 'id', aiUsage: 'id, day, createdAt, noteId, status', analyses: 'id, noteId, createdAt, [noteId+createdAt]' });
   }
 }
 export const db = new IdeaClipDB();
@@ -79,6 +86,7 @@ export async function getSettings(database = db): Promise<Settings> {
 }
 export async function setAIEnabled(aiEnabled: boolean, database = db) {
   await database.settings.put({ id: 'general', aiEnabled });
+  announceAIChange();
 }
 
 type NoteInput = Pick<Note, 'title' | 'url' | 'body' | 'tags'>;

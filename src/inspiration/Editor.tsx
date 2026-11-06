@@ -92,7 +92,7 @@ function EditorForm({ draft }: { draft: NoteDraft }) {
       <label htmlFor="idea-status">整理状态</label><select id="idea-status" value={input.status} onChange={e => change('status', e.target.value as typeof input.status)}><option value="inbox">收集箱</option><option value="incubating">孵化中</option><option value="archived">已归档</option></select>
       <label className="favorite-toggle"><input type="checkbox" checked={input.favorite} onChange={e => change('favorite', e.target.checked)} />标记收藏</label>
     </section>
-    <div className="note-editor-footer"><div className="actions"><button disabled={busy} onClick={() => save('draft')}>保存草稿</button><button className="primary" disabled={busy} onClick={() => save('saved')}>{busy ? '处理中…' : '保存灵感'}</button><button disabled={busy} className="danger" onClick={() => { void remove(); }}>删除笔记</button></div><p className="muted">创建：{new Date(note?.createdAt ?? draft.createdAt).toLocaleString('zh-CN')} · 更新：{new Date(note?.updatedAt ?? draft.updatedAt).toLocaleString('zh-CN')} · AI 不会接收这条笔记。</p></div>
+    <div className="note-editor-footer">{note?.saveState === "saved" && <a href={`analysis.html?noteId=${encodeURIComponent(note.id)}`} target="_blank" rel="noreferrer">AI 分析与历史</a>}<div className="actions"><button disabled={busy} onClick={() => save('draft')}>保存草稿</button><button className="primary" disabled={busy} onClick={() => save('saved')}>{busy ? '处理中…' : '保存灵感'}</button><button disabled={busy} className="danger" onClick={() => { void remove(); }}>删除笔记</button></div><p className="muted">创建：{new Date(note?.createdAt ?? draft.createdAt).toLocaleString('zh-CN')} · 更新：{new Date(note?.updatedAt ?? draft.updatedAt).toLocaleString('zh-CN')} · AI 仅在另行确认发送后分析已保存内容。</p></div>
   </>;
 }
 

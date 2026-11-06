@@ -3,10 +3,11 @@
   "name": "IdeaClip",
   "version": "0.1.0",
   "description": "收藏浏览器灵感，在本地整理笔记，为商业模式分析与项目孵化做准备。",
-  "permissions": ["activeTab", "scripting"],
+  "permissions": ["activeTab", "scripting", "storage"],
+  "optional_host_permissions": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
   "background": { "service_worker": "background.js", "type": "module" },
   "minimum_chrome_version": "114",
   "action": { "default_popup": "popup.html", "default_title": "收藏到 IdeaClip" },
   "options_page": "settings.html",
-  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'none'" }
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'self'; connect-src https: http://localhost:* http://127.0.0.1:*" }
 }

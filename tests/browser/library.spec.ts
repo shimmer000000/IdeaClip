@@ -30,7 +30,7 @@ test('卡片与列表、分页、完整笔记、缩略图和多图大图切换',
   await viewer.getByRole('button', { name: '上一张', exact: true }).click(); await expect(viewer).toContainText('1 / 2'); await viewer.getByRole('button', { name: '关闭截图大图' }).click();
   await page.getByRole('button', { name: '灵感 00005', exact: true }).click();
   const detail = page.getByRole('dialog', { name: '完整笔记' }); await expect(detail).toContainText('正文5：有价值的网页内容。'); await expect(detail).toContainText('下一步如何验证');
-  await expect(detail.getByRole('link')).toHaveAttribute('href', 'https://x.com/fixture/status/5');
+  await expect(detail.getByRole('link', { name: 'https://x.com/fixture/status/5 ↗', exact: true })).toHaveAttribute('href', 'https://x.com/fixture/status/5');
 });
 
 test('全文范围、作者标签搜索、组合来源分类收藏日期筛选与草稿', async () => {

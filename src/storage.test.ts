@@ -46,11 +46,11 @@ describe('本地灵感与隐私开关', () => {
   it('更新不存在的笔记会报错', async () => {
     await expect(updateNote('missing', { ...input, status: 'inbox' }, database)).rejects.toThrow('不存在');
   });
-  it('AI 关闭与开启但未接入时均不发起网络请求', async () => {
+  it('AI 关闭与尚未确认本次分析时均不发起网络请求', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     await expect(requestAnalysis(database)).rejects.toThrow('已关闭');
     await setAIEnabled(true, database);
-    await expect(requestAnalysis(database)).rejects.toThrow('尚未接入');
+    await expect(requestAnalysis(database)).rejects.toThrow('确认本次');
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

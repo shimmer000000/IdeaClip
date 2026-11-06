@@ -1,5 +1,6 @@
 import { noteDefaults } from '../inspiration/model';
 import { httpUrl } from '../collection/model';
+import { markdown, validateReport, type Report } from '../ai/report';
 
 export const TABLES = ['notes', 'noteDrafts', 'screenshots', 'contentCaptures', 'settings', 'analyses', 'projects'] as const;
 export type BackupTable = typeof TABLES[number];
@@ -58,7 +59,24 @@ export function portableRow(table: BackupTable, value: unknown): Row {
     case 'screenshots': return { id: key, kind: enumeration(r.kind, ['visible', 'region']), width: number(r.width), height: number(r.height), originalBytes: number(r.originalBytes), sourceTabId: 0, sourceUrl: url(r.sourceUrl), sourceTitle: txt(r.sourceTitle), createdAt: number(r.createdAt) };
     case 'contentCaptures': return { id: key, originalUrl: url(r.originalUrl ?? r.sourceUrl), sourceUrl: url(r.sourceUrl), platform: enumeration(r.platform, ['x', 'github', 'wechat', 'article', 'web']), siteName: txt(r.siteName), title: txt(r.title), author: nullable(r.author), publishedAt: nullable(r.publishedAt), text: txt(r.text), images: array(r.images).map(value => { const image = object(value); return { url: url(image.url), description: txt(image.description), kind: enumeration(image.kind, ['image', 'video-cover']) }; }), links: array(r.links).map(value => { const link = object(value); return { url: url(link.url), text: txt(link.text) }; }), githubLinks: array(r.githubLinks).map(value => url(value)), collectedAt: number(r.collectedAt), status: enumeration(r.status, ['readable', 'partial', 'unavailable']), warnings: texts(r.warnings), sourceTabId: null, screenshotIds: ids(r.screenshotIds), noteId: r.noteId == null ? null : id(r.noteId), updatedAt: number(r.updatedAt), textOrigin: enumeration(r.textOrigin, ['extracted', 'manual', 'edited', 'empty']) };
     case 'settings': if (key !== 'general') throw new Error('未知设置项，拒绝导出或恢复。'); return { id: 'general', aiEnabled: bool(r.aiEnabled) };
-    case 'analyses': return { id: key, noteId: id(r.noteId), createdAt: number(r.createdAt), content: txt(r.content) };
+    case 'analyses': {
+      const result: Row = { id: key, noteId: id(r.noteId), createdAt: timestamp(r.createdAt), content: txt(r.content) };
+      if (r.report !== undefined) {
+        const report = validateReport(r.report);
+        const portable = structuredClone(report);
+        for (const claims of Object.values(portable.sections)) for (const claim of claims) { claim.text = redact(claim.text); if (claim.evidence) claim.evidence = redact(claim.evidence); }
+        result.report = validateReport(portable);
+      }
+      if (r.model !== undefined) result.model = redact(text(r.model, 150));
+      if (r.provider !== undefined) result.provider = enumeration(r.provider, ['openai', 'deepseek', 'custom']);
+      if (r.endpointOrigin !== undefined) result.endpointOrigin = new URL(url(r.endpointOrigin)).origin;
+      if (r.inputDigest !== undefined) { if (!/^[a-f0-9]{64}$/.test(text(r.inputDigest, 64))) throw new Error('分析输入摘要无效。'); result.inputDigest = r.inputDigest; }
+      if (r.inputRevision !== undefined) result.inputRevision = number(r.inputRevision);
+      if (r.imageCount !== undefined) { result.imageCount = number(r.imageCount); if ((result.imageCount as number) > 3) throw new Error('报告图像数量无效。'); }
+      // Regenerate Markdown from redacted structured fields so escaping cannot hide credentials.
+      if (result.report) result.content = markdown(result.report as Report, result.model as string || '模型未记录', result.createdAt as number);
+      return result;
+    }
     case 'projects': return { id: key, title: txt(r.title), noteIds: ids(r.noteIds), ...dates() };
   }
 }
@@ -77,7 +95,7 @@ export function references(table: BackupTable, row: Row): [BackupTable, string][
 }
 export function parseManifest(value: unknown): Manifest {
   const r = object(value);
-  if (r.format !== 'IdeaClip' || r.formatVersion !== 1 || typeof r.databaseVersion !== 'number' || !Number.isInteger(r.databaseVersion) || r.databaseVersion < 1 || r.databaseVersion > 5) throw new Error('备份格式或数据库版本不兼容，请使用支持该版本的 IdeaClip。');
+  if (r.format !== 'IdeaClip' || r.formatVersion !== 1 || typeof r.databaseVersion !== 'number' || !Number.isInteger(r.databaseVersion) || r.databaseVersion < 1 || r.databaseVersion > 6) throw new Error('备份格式或数据库版本不兼容，请使用支持该版本的 IdeaClip。');
   const createdAt = text(r.createdAt, 100); if (!Number.isFinite(Date.parse(createdAt))) throw new Error('备份创建时间无效。');
   const counts = emptyCounts(); const source = object(r.counts); let total = 0;
   for (const table of TABLES) { counts[table] = number(source[table]); total += counts[table]; }

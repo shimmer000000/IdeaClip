@@ -1,4 +1,5 @@
 import Dexie from 'dexie';
+import { announceAIChange } from '../ai/events';
 import { db, type IdeaClipDB, type Note } from '../storage';
 import type { NoteDraft } from '../inspiration/model';
 import { cardOf, searchOf, draftCardOf } from '../library/projections';
@@ -159,6 +160,7 @@ export async function restoreBackup(prepared: PreparedBackup, mode: 'merge' | 'r
   prepared.assertUsable();
   if (mode !== 'merge' && mode !== 'replace') throw new Error('恢复方式无效。');
   if (mode === 'replace' && !options.confirmed) throw new Error('完整替换必须二次确认。');
+  announceAIChange();
   const result: RestoreResult = { succeeded: 0, skipped: 0, failed: 0, duplicates: 0, conflicts: 0 };
   try {
     await database.transaction('rw', database.tables, async () => {

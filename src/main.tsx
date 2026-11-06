@@ -6,6 +6,7 @@ import { Library as Notes } from './library/Library';
 import { CapturePreview } from './capture/Capture';
 import { CollectionPreview } from './collection/Collection';
 import { NoteEditor } from './inspiration/Editor';
+import { AnalysisPage } from './ai/AnalysisPage';
 import './styles.css';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
@@ -18,7 +19,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean
 }
 
 const page = window.location.pathname.split('/').pop();
-const App = page === 'notes.html' ? Notes : page === 'settings.html' ? Settings : page === 'capture.html' ? CapturePreview : page === 'collection.html' ? CollectionPreview : page === 'note.html' ? NoteEditor : Popup;
+const App = page === 'analysis.html' ? AnalysisPage : page === 'notes.html' ? Notes : page === 'settings.html' ? Settings : page === 'capture.html' ? CapturePreview : page === 'collection.html' ? CollectionPreview : page === 'note.html' ? NoteEditor : Popup;
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode><ErrorBoundary><App /></ErrorBoundary></React.StrictMode>,
