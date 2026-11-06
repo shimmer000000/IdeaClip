@@ -1,6 +1,21 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { Component, type ReactNode } from 'react';
+import { Notes, Popup, Settings } from './App';
+import './styles.css';
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    if (this.state.failed) return <main className="panel" role="alert"><h1>暂时无法读取灵感</h1><p>请确认浏览器允许 IndexedDB，或重新打开插件。已有数据不会被自动清除。</p></main>;
+    return this.props.children;
+  }
+}
+
+const page = window.location.pathname.split('/').pop();
+const App = page === 'notes.html' ? Notes : page === 'settings.html' ? Settings : Popup;
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode><main><h1>IdeaClip</h1><p>灵感收藏，始于此刻。</p></main></React.StrictMode>,
+  <React.StrictMode><ErrorBoundary><App /></ErrorBoundary></React.StrictMode>,
 );
