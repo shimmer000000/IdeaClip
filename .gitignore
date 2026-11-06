@@ -19,6 +19,8 @@ data/
 private/
 notes/
 exports/
+backups/
+*.zip
 screenshots/
 browser-profile/
 *.db

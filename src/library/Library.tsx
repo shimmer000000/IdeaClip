@@ -32,6 +32,11 @@ function Detail({ id, close, gallery, edit }: { id: string; close: () => void; g
 }
 
 export function Library() {
+  useEffect(() => {
+    const channel = new BroadcastChannel('ideaclip-restored');
+    channel.onmessage = () => window.location.reload();
+    return () => channel.close();
+  }, []);
   const [filter, setFilter] = useState<LibraryFilter>({ ...initialFilter });
   const [query, setQuery] = useState(''); const [dates, setDates] = useState({ from: '', to: '' });
   const [dateError, setDateError] = useState('');
