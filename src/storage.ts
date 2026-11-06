@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie';
+import type { ContentCapture } from './collection/model';
 
 export type NoteStatus = 'inbox' | 'incubating' | 'archived';
 export interface Note {
@@ -33,6 +34,7 @@ export class IdeaClipDB extends Dexie {
   analyses!: Table<Analysis, string>;
   projects!: Table<Project, string>;
   screenshots!: Table<Screenshot, string>;
+  contentCaptures!: Table<ContentCapture, string>;
   constructor(name = 'ideaclip') {
     super(name);
     this.version(1).stores({
@@ -43,6 +45,7 @@ export class IdeaClipDB extends Dexie {
     });
     // Add a store without changing or clearing v1 notes/settings.
     this.version(2).stores({ screenshots: 'id, createdAt' });
+    this.version(3).stores({ contentCaptures: 'id, sourceUrl, platform, collectedAt, updatedAt, *screenshotIds' });
   }
 }
 export const db = new IdeaClipDB();

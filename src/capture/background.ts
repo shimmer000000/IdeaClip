@@ -2,6 +2,7 @@ import { db, saveScreenshot, type Screenshot } from '../storage';
 import { readViewport, sameViewport, type Rect, type Viewport } from './geometry';
 import { compressCapture } from './image';
 import { installSelector } from './selector';
+import '../collection/background';
 
 let busy = false;
 let lastCaptureAt = 0;
