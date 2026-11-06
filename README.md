@@ -45,6 +45,8 @@ npm run build
 
 ## 目录
 
+本项目已接入 CodeGraph。新环境可运行 `codegraph init --yes .`，之后用 `codegraph explore "IdeaClipDB Popup"` 查询代码；修改后运行 `codegraph sync`。索引仅保存在本地 `.codegraph/`，不会上传 GitHub。
+
 ```text
 public/manifest.json    扩展清单与权限
 src/App.tsx            弹窗、灵感库、设置
