@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 import type { ContentCapture } from './collection/model';
 import { noteDefaults, type NoteDetails, type NoteDraft } from './inspiration/model';
+import { deleteNoteIndex, migrateLibrary, writeNoteIndex, type NoteCard, type NoteSearch, type DraftCard, type LibraryState, type ScreenshotThumb } from './library/projections';
 
 export type NoteStatus = 'inbox' | 'incubating' | 'archived';
 export interface Note extends NoteDetails {
@@ -37,6 +38,11 @@ export class IdeaClipDB extends Dexie {
   screenshots!: Table<Screenshot, string>;
   contentCaptures!: Table<ContentCapture, string>;
   noteDrafts!: Table<NoteDraft, string>;
+  noteCatalog!: Table<NoteCard, string>;
+  noteSearch!: Table<NoteSearch, string>;
+  draftCatalog!: Table<DraftCard, string>;
+  libraryState!: Table<LibraryState, string>;
+  screenshotThumbs!: Table<ScreenshotThumb, string>;
   constructor(name = 'ideaclip') {
     super(name);
     this.version(1).stores({
@@ -57,6 +63,7 @@ export class IdeaClipDB extends Dexie {
         Object.assign(note, { ...noteDefaults(note.url ?? ''), ...note });
       });
     });
+    this.version(5).stores({ noteCatalog: 'id, saveState, site, category, createdAt, updatedAt', noteSearch: 'id', draftCatalog: 'id, [pending+updatedAt]', libraryState: 'id', screenshotThumbs: 'id' }).upgrade(migrateLibrary);
   }
 }
 export const db = new IdeaClipDB();
@@ -87,23 +94,25 @@ export async function createNote(input: NoteInput, database = db): Promise<strin
   const clean = cleanInput(input);
   const now = Date.now();
   const note: Note = { ...noteDefaults(clean.url), ...clean, id: crypto.randomUUID(), status: 'inbox', revision: 1, createdAt: now, updatedAt: now };
-  await database.notes.add(note);
+  await database.transaction('rw', [database.notes, database.noteCatalog, database.noteSearch, database.libraryState], async () => { await database.notes.add(note); await writeNoteIndex(note, database); });
   return note.id;
 }
 export async function updateNote(id: string, input: NoteInput & { status: NoteStatus }, database = db) {
   const clean = cleanInput(input);
   if (!['inbox', 'incubating', 'archived'].includes(input.status)) throw new Error('无效的灵感状态。');
-  await database.transaction('rw', database.notes, async () => {
+  await database.transaction('rw', [database.notes, database.noteCatalog, database.noteSearch, database.libraryState], async () => {
     const previous = await database.notes.get(id);
     if (!previous) throw new Error('这条灵感已不存在，请刷新列表。');
     await database.notes.update(id, { ...clean, status: input.status, revision: (previous.revision ?? 0) + 1, updatedAt: Date.now() });
+    await writeNoteIndex((await database.notes.get(id))!, database);
   });
 }
 export async function deleteNote(id: string, database = db) {
-  await database.transaction('rw', database.notes, database.analyses, database.contentCaptures, database.noteDrafts, async () => {
+  await database.transaction('rw', [database.notes, database.analyses, database.contentCaptures, database.noteDrafts, database.noteCatalog, database.noteSearch, database.draftCatalog, database.libraryState], async () => {
     await database.analyses.where('noteId').equals(id).delete();
     await database.notes.delete(id);
     await database.contentCaptures.where('noteId').equals(id).modify({ noteId: null });
     await database.noteDrafts.delete(id);
+    await deleteNoteIndex(id, database);
   });
 }

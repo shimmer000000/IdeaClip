@@ -11,7 +11,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
       const url = httpUrl(tab?.url) ?? '';
       if (!url) throw new Error('请在普通网页点击收藏，或从灵感库新建手动笔记。');
-      id = await db.transaction('rw', db.noteDrafts, async () => {
+      id = await db.transaction('rw', db.noteDrafts, db.draftCatalog, async () => {
         const existing = await db.noteDrafts.where('sourcePageUrl').equals(url).sortBy('updatedAt');
         const latest = existing.at(-1);
         if (latest) { await db.noteDrafts.update(latest.id, { sourceTabId: tab.id ?? null }); return latest.id; }

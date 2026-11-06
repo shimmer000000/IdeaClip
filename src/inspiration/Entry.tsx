@@ -29,10 +29,10 @@ export function EditorEntry({ target, children, closePopup = false, beforeOpen }
   return <div className="editor-entry"><button type="button" className="primary" disabled={busy} onClick={() => { void open(); }}>{busy ? '正在打开…' : children}</button>{error && <p role="alert" className="error">{error}</p>}</div>;
 }
 export function PendingDrafts({ all = false }: { all?: boolean }) {
+  const [limit, setLimit] = useState(all ? 20 : 5);
   const drafts = useLiveQuery(() => {
-    const query = db.noteDrafts.orderBy('updatedAt').reverse().filter(draft => draft.hasChanges);
-    return (all ? query : query.limit(6)).toArray();
-  }, [all]);
-  const shown = all ? drafts : drafts?.slice(0, 5);
-  return shown?.length ? <section className="pending-drafts"><h2>恢复未提交编辑</h2>{shown.map(draft => <a key={draft.id} href={`note.html?id=${draft.id}`} target="_blank" rel="noreferrer">{draft.input.title || '未命名灵感'} · {new Date(draft.updatedAt).toLocaleString('zh-CN')}</a>)}{!all && drafts && drafts.length > 5 && <a href="notes.html" target="_blank" rel="noreferrer">在灵感库查看全部未提交编辑 ↗</a>}</section> : null;
+    return db.draftCatalog.where('[pending+updatedAt]').between([1, 0], [1, Number.MAX_SAFE_INTEGER], true, true).reverse().limit(limit + 1).toArray();
+  }, [limit]);
+  const shown = drafts?.slice(0, limit);
+  return shown?.length ? <section className="pending-drafts"><h2>恢复未提交编辑</h2>{shown.map(draft => <a key={draft.id} href={`note.html?id=${draft.id}`} target="_blank" rel="noreferrer">{draft.title || '未命名灵感'} · {new Date(draft.updatedAt).toLocaleString('zh-CN')}</a>)}{drafts && drafts.length > limit && (all ? <button onClick={() => setLimit(old => old + 20)}>加载更多未提交编辑</button> : <a href="notes.html" target="_blank" rel="noreferrer">在灵感库查看全部未提交编辑 ↗</a>)}</section> : null;
 }

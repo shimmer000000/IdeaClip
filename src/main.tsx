@@ -1,7 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { Component, type ReactNode } from 'react';
-import { Notes, Popup, Settings } from './App';
+import { Popup, Settings } from './App';
+import { Library as Notes } from './library/Library';
 import { CapturePreview } from './capture/Capture';
 import { CollectionPreview } from './collection/Collection';
 import { NoteEditor } from './inspiration/Editor';
