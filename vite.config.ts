@@ -7,7 +7,7 @@ export default defineConfig({
   base: './',
   build: {
     rollupOptions: {
-      input: { ...Object.fromEntries(['popup', 'notes', 'settings', 'capture', 'collection'].map(name => [name, fileURLToPath(new URL(`./${name}.html`, import.meta.url))])), background: fileURLToPath(new URL('./src/capture/background.ts', import.meta.url)) },
+      input: { ...Object.fromEntries(['popup', 'notes', 'settings', 'capture', 'collection', 'note'].map(name => [name, fileURLToPath(new URL(`./${name}.html`, import.meta.url))])), background: fileURLToPath(new URL('./src/capture/background.ts', import.meta.url)) },
       output: { entryFileNames: chunk => chunk.name === 'background' ? 'background.js' : 'assets/[name]-[hash].js' },
     },
   },

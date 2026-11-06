@@ -14,8 +14,8 @@ describe('截图存储与升级兼容', () => {
     await old.table('notes').add(note); await old.table('settings').put({ id: 'general', aiEnabled: false }); old.close();
     const database = new IdeaClipDB(name); databases.push(database);
     await database.open();
-    expect(database.verno).toBe(3);
-    expect(await database.notes.get('old-note')).toEqual(note);
+    expect(database.verno).toBe(4);
+    expect(await database.notes.get('old-note')).toMatchObject(note);
     expect((await database.settings.get('general'))?.aiEnabled).toBe(false);
     await saveScreenshot(screenshot(), database);
     expect(await database.screenshots.count()).toBe(1);

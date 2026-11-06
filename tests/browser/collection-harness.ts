@@ -4,13 +4,14 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 
-export async function collectionHarness() {
+export async function collectionHarness(existingProfile?: string) {
   const installed = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
   const executablePath = process.env.IDEACLIP_BROWSER_PATH ?? (existsSync(installed) ? installed : chromium.executablePath());
-  const context = await chromium.launchPersistentContext(await mkdtemp(join(tmpdir(), 'ideaclip-collect-')), { executablePath, headless: false, viewport: { width: 1100, height: 800 }, ignoreDefaultArgs: ['--disable-extensions'], args: ['--enable-unsafe-extension-debugging', '--window-position=-2000,-2000'] });
+  const profile = existingProfile ?? await mkdtemp(join(tmpdir(), 'ideaclip-collect-'));
+  const context = await chromium.launchPersistentContext(profile, { executablePath, headless: false, viewport: { width: 1100, height: 800 }, ignoreDefaultArgs: ['--disable-extensions'], args: ['--enable-unsafe-extension-debugging', '--window-position=-2000,-2000'] });
   const cdp = await context.browser()!.newBrowserCDPSession();
   const loaded = await cdp.send('Extensions.loadUnpacked' as never, { path: resolve('dist') } as never) as { id: string };
-  return { context, cdp, extensionId: loaded.id };
+  return { context, cdp, extensionId: loaded.id, profile };
 }
 
 let commandId = 0;

@@ -1,5 +1,5 @@
 // Everything used here must be inside the function: Chrome serializes it for injection.
-export function installSelector(previewTabId: number | null) {
+export function installSelector(previewTabId: number | null, draftId: string | null = null) {
   const scope = globalThis as typeof globalThis & { __ideaClipCancel?: () => void };
   scope.__ideaClipCancel?.();
   const initial = { width: innerWidth, height: innerHeight, scrollX, scrollY, dpr: devicePixelRatio, scale: visualViewport?.scale ?? 1, href: location.href };
@@ -58,7 +58,7 @@ export function installSelector(previewTabId: number | null) {
     // Let the compositor paint the page without the selector before asking Chrome to capture.
     await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     try {
-      const response = await chrome.runtime.sendMessage({ type: 'IC_CAPTURE_REGION', rect: selected, viewport: initial, previewTabId });
+      const response = await chrome.runtime.sendMessage({ type: 'IC_CAPTURE_REGION', rect: selected, viewport: initial, previewTabId, draftId });
       if (!response?.ok) alert(response?.error ?? '截图失败，请重新打开 IdeaClip。');
     } catch { alert('截图中断，请重新打开 IdeaClip 再试。'); }
   });

@@ -1,8 +1,11 @@
 import { emptyPage, type ExtractedPage } from './model';
 import { storeExtraction } from './storage';
+import { activateDraftSource, showNoteEditor } from '../inspiration/browser';
+import { stageCapture } from '../inspiration/repository';
 
 let collecting = false;
-export async function collectActivePage() {
+export async function collectActivePage(draftId?: string, editorTabId: number | null = null) {
+  if (draftId) await activateDraftSource(draftId);
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   let page: ExtractedPage;
   try {
@@ -22,15 +25,22 @@ export async function collectActivePage() {
     page = emptyPage(tab?.url ?? '', tab?.title ?? '', reason);
   }
   const id = await storeExtraction(page, tab?.id ?? null);
-  try { await chrome.tabs.create({ url: chrome.runtime.getURL(`collection.html?id=${encodeURIComponent(id)}`) }); }
+  if (draftId) await stageCapture(draftId, id);
+  try {
+    if (draftId) await showNoteEditor(draftId, editorTabId);
+    else await chrome.tabs.create({ url: chrome.runtime.getURL(`collection.html?id=${encodeURIComponent(id)}`) });
+  }
   catch { throw new Error('采集草稿已保存在本地，但预览打开失败。请重新点击插件中的“最近采集”。'); }
   return id;
 }
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
-  if (message?.type !== 'IC_COLLECT_START' || sender.id !== chrome.runtime.id || sender.url?.split('?')[0] !== chrome.runtime.getURL('popup.html')) return;
+  if (message?.type !== 'IC_COLLECT_START' || sender.id !== chrome.runtime.id) return;
+  const fromPopup = sender.url?.split('?')[0] === chrome.runtime.getURL('popup.html');
+  const fromEditor = sender.url?.startsWith(chrome.runtime.getURL('note.html')) && typeof message.draftId === 'string';
+  if (!fromPopup && !fromEditor) return;
   if (collecting) { respond({ ok: false, error: '正在提取网页，请稍候。' }); return; }
   collecting = true;
-  void collectActivePage().then(id => respond({ ok: true, id })).catch(e => respond({ ok: false, error: e instanceof Error ? e.message : '采集失败，请重试。' })).finally(() => { collecting = false; });
+  void collectActivePage(fromEditor ? message.draftId : undefined, sender.tab?.id ?? null).then(id => respond({ ok: true, id })).catch(e => respond({ ok: false, error: e instanceof Error ? e.message : '采集失败，请重试。' })).finally(() => { collecting = false; });
   return true;
 });
