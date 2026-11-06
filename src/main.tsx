@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { Component, type ReactNode } from 'react';
 import { Notes, Popup, Settings } from './App';
+import { CapturePreview } from './capture/Capture';
 import './styles.css';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
@@ -14,7 +15,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean
 }
 
 const page = window.location.pathname.split('/').pop();
-const App = page === 'notes.html' ? Notes : page === 'settings.html' ? Settings : Popup;
+const App = page === 'notes.html' ? Notes : page === 'settings.html' ? Settings : page === 'capture.html' ? CapturePreview : Popup;
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode><ErrorBoundary><App /></ErrorBoundary></React.StrictMode>,

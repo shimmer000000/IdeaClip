@@ -2,6 +2,7 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { createNote, db, deleteNote, getSettings, setAIEnabled, updateNote, type Note, type NoteStatus } from './storage';
 import { currentPage, openPage } from './browser';
+import { CaptureButtons, RecentCapture } from './capture/Capture';
 
 const statuses: Record<NoteStatus, string> = { inbox: '收集箱', incubating: '孵化中', archived: '已归档' };
 const messageOf = (error: unknown) => error instanceof Error ? error.message : '操作失败，请重试。';
@@ -53,7 +54,7 @@ function NoteForm({ note, onSaved, onCancel }: { note?: Note; onSaved: () => voi
 export function Popup() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
-  return <div className="popup"><Header compact /><main><p className="eyebrow">CAPTURE A SPARK</p><h1>留住这一刻的灵感。</h1><p className="muted">先收藏，再让想法慢慢生长。</p>{saved && <Notice>已保存到本地灵感库。</Notice>}<NoteForm onSaved={() => setSaved(true)} /></main><footer><button onClick={() => { void openPage('notes').catch(e => setError(messageOf(e))); }}>打开灵感库 ↗</button><button onClick={() => { void openPage('settings').catch(e => setError(messageOf(e))); }}>设置</button></footer>{error && <p role="alert">{error}</p>}</div>;
+  return <div className="popup"><Header compact /><main><p className="eyebrow">CAPTURE A SPARK</p><h1>留住这一刻的灵感。</h1><p className="muted">先收藏，再让想法慢慢生长。</p><CaptureButtons /><RecentCapture /><p className="capture-hint">截图自动压缩并保存在本地；区域选择时按 Esc 取消。</p>{saved && <Notice>已保存到本地灵感库。</Notice>}<NoteForm onSaved={() => setSaved(true)} /></main><footer><button onClick={() => { void openPage('notes').catch(e => setError(messageOf(e))); }}>打开灵感库 ↗</button><button onClick={() => { void openPage('settings').catch(e => setError(messageOf(e))); }}>设置</button></footer>{error && <p role="alert">{error}</p>}</div>;
 }
 
 export function Notes() {

@@ -14,12 +14,25 @@ export interface Note {
 export interface Settings { id: 'general'; aiEnabled: boolean }
 export interface Analysis { id: string; noteId: string; createdAt: number; content: string }
 export interface Project { id: string; title: string; noteIds: string[]; createdAt: number; updatedAt: number }
+export interface Screenshot {
+  id: string;
+  blob: Blob;
+  kind: 'visible' | 'region';
+  width: number;
+  height: number;
+  originalBytes: number;
+  sourceTabId: number;
+  sourceUrl: string;
+  sourceTitle: string;
+  createdAt: number;
+}
 
 export class IdeaClipDB extends Dexie {
   notes!: Table<Note, string>;
   settings!: Table<Settings, string>;
   analyses!: Table<Analysis, string>;
   projects!: Table<Project, string>;
+  screenshots!: Table<Screenshot, string>;
   constructor(name = 'ideaclip') {
     super(name);
     this.version(1).stores({
@@ -28,9 +41,17 @@ export class IdeaClipDB extends Dexie {
       analyses: 'id, noteId, createdAt',
       projects: 'id, updatedAt, *noteIds',
     });
+    // Add a store without changing or clearing v1 notes/settings.
+    this.version(2).stores({ screenshots: 'id, createdAt' });
   }
 }
 export const db = new IdeaClipDB();
+
+export async function saveScreenshot(screenshot: Screenshot, database = db) {
+  if (!(screenshot.blob instanceof Blob) || screenshot.blob.size === 0) throw new Error('截图内容为空，未保存。');
+  try { await database.screenshots.add(screenshot); }
+  catch { throw new Error('截图保存失败，可能是本地空间不足或数据库不可用。请释放空间后重新截图；已有笔记不会被删除。'); }
+}
 
 export async function getSettings(database = db): Promise<Settings> {
   return (await database.settings.get('general')) ?? { id: 'general', aiEnabled: false };
