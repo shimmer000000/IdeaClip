@@ -22,7 +22,7 @@ export function AISettings() {
     let clean: AIConfig; try { clean = validateConfig(config); } catch (error) { setError(error instanceof Error ? error.message : '配置无效。'); return; }
     setBusy(true);
     try {
-      if (!globalThis.chrome?.runtime?.id || !await chrome.permissions.request({ origins: [permissionOrigin(clean.endpoint)] })) throw new Error('服务商域名授权被拒绝，配置未启用。');
+      if (!globalThis.chrome?.runtime?.id || !await chrome.permissions.request({ origins: [permissionOrigin(clean.endpoint)] })) { setError('服务商域名授权被拒绝，配置未启用。'); return; }
       const previous = await getCredential(clean.endpoint); const value = key || previous?.value || '';
       if (clean.auth === 'bearer' && !value) throw new Error('请填写此端点的 API Key。');
       await saveCredential(clean.endpoint, clean.auth === 'none' ? '' : value, persistent); await saveConfig(clean); setKey(''); setAcknowledged(false); setMessage('配置与域名授权已保存；未发送测试请求。手动分析仍需每次确认；自动模式需重新授权。');

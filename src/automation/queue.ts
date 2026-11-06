@@ -3,7 +3,7 @@ import { db, type Analysis, type IdeaClipDB } from '../storage';
 import { AIEngine, type Preview } from '../ai/engine';
 import { RequestFailure } from '../ai/transport';
 import { getCredential, hasPermission } from '../ai/config';
-import { authorizeAutomatic, assertSnapshot, pauseAutomatic, assistPermission } from './policy';
+import { authorizeAutomatic, assertSnapshot, pauseAutomatic, assistPermission, automaticContentProblem } from './policy';
 import { QueueFailure, sourceProblem, type AITask, type AutomaticAuthority } from './model';
 import { signalQueue } from './signals';
 
@@ -35,7 +35,7 @@ export async function resumeWaiting(session: string, database = db) {
   if (!await hasPermission(config.endpoint) || (credential?.version ?? null) !== policy.credentialVersion) throw new Error('凭据或端点授权失效，请先在设置页确认，再重新授权自动模式。');
   if (policy.mode === 'assist') for (const host of policy.allowHosts) if (!await assistPermission('https://' + host)) throw new Error('浏览辅助网站权限已撤销，请先在设置页重新授权。');
   let resumed = 0; let stale = 0;
-  await database.transaction('rw', [database.autoPolicy, database.aiTasks, database.notes, database.noteDrafts], async () => {
+  await database.transaction('rw', [database.autoPolicy, database.aiTasks, database.notes, database.noteDrafts, database.contentCaptures], async () => {
     await database.autoPolicy.update('general', { sessionId: session, paused: false, reason: '' });
     const rows = await database.aiTasks.where('state').equals('paused').toArray();
     for (const task of rows) {
@@ -43,6 +43,8 @@ export async function resumeWaiting(session: string, database = db) {
       try {
         const note = await assertSnapshot(task, database); const denied = sourceProblem(note, policy);
         if (denied || (policy.mode === 'assist' && task.source !== 'assist')) throw new Error(denied || '当前模式不允许旧保存模式任务，请手动分析。');
+        const quality = await automaticContentProblem(note, database);
+        if (quality) { await database.aiTasks.update(task.id, { state: 'paused', reason: quality, errorCode: 'quality', updatedAt: Date.now() }); stale++; continue; }
         await database.aiTasks.update(task.id, { state: 'waiting', consentId: policy.consentId, sessionId: session, reason: '', errorCode: '', updatedAt: Date.now() }); resumed++;
       } catch { await database.aiTasks.update(task.id, { state: 'failed', reason: '快照失效或来源不符合当前授权，未发送；请核对原笔记。', errorCode: 'snapshot', updatedAt: Date.now() }); stale++; }
     }
@@ -81,7 +83,7 @@ export class QueueExecutor {
     // Missing/unreadable ledger after a claimed attempt is uncertain, never proof of no charge.
     const charged = !!usage?.reservedMicros || (!!attemptId && usage === undefined);
     const code = error instanceof RequestFailure || error instanceof QueueFailure ? error.code : 'local';
-    const knownUnsent = !charged && ['paused', 'budget', 'permission', 'credential', 'consent', 'config'].includes(code);
+    const knownUnsent = !charged && ['paused', 'budget', 'permission', 'credential', 'consent', 'config', 'quality'].includes(code);
     const reason = error instanceof RequestFailure || error instanceof QueueFailure ? error.message : '本地任务处理失败，原笔记未修改，请检查空间和配置。';
     await this.database.transaction('rw', [this.database.aiTasks], async () => {
       const task = await this.database.aiTasks.get(id); if (!task || !['waiting', 'running'].includes(task.state)) return;
@@ -98,10 +100,11 @@ export class QueueExecutor {
         if (await completeFromReport(id, this.database)) return;
         const note = await assertSnapshot(task, this.database); const policy = await this.database.autoPolicy.get('general');
         if (!policy) throw new QueueFailure('consent', '自动分析授权不存在。'); const denied = sourceProblem(note, policy); if (denied) throw new QueueFailure('source', denied);
+        if (!manualPreview) { const quality = await automaticContentProblem(note, this.database); if (quality) throw new QueueFailure('quality', quality); }
         const preview = manualPreview ?? await this.engine.preview(task.noteId, []);
         if (preview.noteId !== task.noteId || preview.revision !== task.revision || preview.imageIds.length) throw new QueueFailure('snapshot', '重试预览与任务版本不一致或包含图片，未发送。');
         const authority: AutomaticAuthority = { taskId: id, consentId: policy.consentId, sessionId: session, credentialVersion: policy.credentialVersion, manualRetry: !!manualPreview };
-        await this.database.transaction('rw', [this.database.aiTasks, this.database.autoPolicy, this.database.settings, this.database.notes, this.database.noteDrafts], async () => {
+        await this.database.transaction('rw', [this.database.aiTasks, this.database.autoPolicy, this.database.settings, this.database.notes, this.database.noteDrafts, this.database.contentCaptures], async () => {
           const current = await this.database.aiTasks.get(id);
           if (!current || (manualPreview ? !['failed', 'cancelled'].includes(current.state) : current.state !== 'waiting')) throw new QueueFailure('cancelled', '任务状态已改变，未重复执行。');
           await this.database.aiTasks.update(id, { state: 'running', attemptId: preview.id, lastAttemptId: preview.id, reason: '', errorCode: '', execution: manualPreview ? 'manual' : 'auto', consentId: policy.consentId, sessionId: session, updatedAt: Date.now() });

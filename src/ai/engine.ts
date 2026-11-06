@@ -79,7 +79,7 @@ export class AIEngine {
         if (!note || note.revision !== preview.revision || (await this.database.noteDrafts.get(preview.noteId))?.hasChanges) throw new RequestFailure('stale', '笔记已改变，请重新核对发送内容。');
         const now = this.dependencies.now(); const day = new Date(now).toISOString().slice(0, 10);
         usage = { id: preview.id, noteId: preview.noteId, day, createdAt: now, model: preview.config.model, status: 'reserved', reservedMicros: preview.costMicros, estimatedInput: preview.inputTokensUpper, maxOutput: preview.config.maxOutput };
-        await this.database.transaction('rw', [this.database.aiUsage, this.database.settings, this.database.aiConfig, ...(authority ? [this.database.autoPolicy, this.database.aiTasks, this.database.notes, this.database.noteDrafts] : [])], async () => {
+        await this.database.transaction('rw', [this.database.aiUsage, this.database.settings, this.database.aiConfig, ...(authority ? [this.database.autoPolicy, this.database.aiTasks, this.database.notes, this.database.noteDrafts, this.database.contentCaptures] : [])], async () => {
           await this.gate(); const latest = await this.database.aiConfig.get('manual'); if (latest?.version !== preview.config.version) throw new RequestFailure('stale', '配置已改变，请重新确认。');
           await checkAuthority();
           const rows = await this.database.aiUsage.where('day').equals(day).toArray(); const spent = rows.reduce((sum, row) => sum + row.reservedMicros, 0);

@@ -22,7 +22,7 @@ images/000001.webp
 `manifest.json` 包含：
 
 - `format: "IdeaClip"`、`formatVersion: 1`。
-- `databaseVersion`：导出时 schema 版本，当前 7；导入支持 1 至 7，拒绝未来版本。
+- `databaseVersion`：导出时 schema 版本，当前 8；导入支持 1 至 8，拒绝未来版本。
 - `createdAt`：ISO 备份创建时间。
 - `counts`：七个业务表的完整记录数，包括 0。
 - `entries`：除清单自身外每项的 `name`、字节数 `size`、小写十六进制 `sha256`。
@@ -32,6 +32,8 @@ ZIP 还提供每项 CRC32。校验和用于发现传输损坏，不能证明来�
 ## 数据范围与脱敏
 
 导出七个权威表：`notes`、`noteDrafts`、`screenshots`、`contentCaptures`、`settings`、`analyses`、`projects`。`body` 保留为感悟，`content` 是采集正文，稳定 ID、标签、收藏、保存状态、时间、图片和采集关联不合并或改名。
+
+schema v8 采集可含 `quality.version: 1` 和 `provenance.version: 1`。备份按脱敏后的正文与 URL 重算质量和有界段落位置，丢弃 DOM 路径，来源强制标记 `backup`；不携带自动发送资格。恢复后仍可编辑和逐次确认手动分析。旧采集没有这些字段时保持兼容；未来元数据版本或非法指标拒绝导入。定位与校验和均不证明网页事实真实。
 
 逐字段白名单投影，不导出未知配置字段。设置仅包含 `general.aiEnabled`；API Key、访问令牌及其他未知凭据配置不会进入备份。文本中常见密钥、Bearer、私钥块和凭据赋值作脱敏，URL 中 token、secret、password、API Key、authorization、credential、signature 查询参数移除；普通原始 URL 保持原文本。脱敏字段不能逐字恢复，且不能保证识别任意人为格式或截图中的秘密。备份不加密，请妥善保存。
 

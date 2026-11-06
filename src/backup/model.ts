@@ -1,5 +1,6 @@
 import { noteDefaults } from '../inspiration/model';
 import { httpUrl } from '../collection/model';
+import { assessQuality, paragraphMap, type TextQuality } from '../collection/quality';
 import { markdown, validateReport, type Report } from '../ai/report';
 
 export const TABLES = ['notes', 'noteDrafts', 'screenshots', 'contentCaptures', 'settings', 'analyses', 'projects'] as const;
@@ -45,6 +46,20 @@ function fields(raw: Record<string, unknown>) {
   const d: Record<string, unknown> = { ...noteDefaults(typeof raw.url === 'string' ? raw.url : ''), ...raw };
   return { title: txt(d.title), url: url(d.url), platform: enumeration(d.platform, ['x', 'github', 'wechat', 'article', 'web']), author: nullable(d.author), publishedAt: nullable(d.publishedAt), content: txt(d.content), body: txt(d.body), researchQuestions: txt(d.researchQuestions), category: txt(d.category), screenshotIds: ids(d.screenshotIds), captureIds: ids(d.captureIds), favorite: bool(d.favorite), status: enumeration(d.status ?? 'inbox', ['inbox', 'incubating', 'archived']) };
 }
+function captureMetadata(raw: Record<string, unknown>, safeText: string, safeUrl: string) {
+  if (raw.quality === undefined && raw.provenance === undefined) return {};
+  const q = raw.quality === undefined ? null : object(raw.quality);
+  if (q && (q.version !== 1 || !['complete', 'partial', 'unreadable'].includes(String(q.state)))) throw new Error('正文质量版本或状态无效。');
+  const methods: TextQuality['method'][] = ['readability', 'semantic', 'x', 'github', 'wechat', 'manual'];
+  const method = q ? enumeration(q.method, methods) : 'manual';
+  const metrics = q ? object(q.metrics) : null;
+  const density = metrics?.linkDensity ?? 0; const hidden = metrics?.hiddenRemoved ?? 0;
+  if (typeof density !== 'number' || !Number.isFinite(density) || density < 0 || density > 1 || typeof hidden !== 'number' || !Number.isSafeInteger(hidden) || hidden < 0 || hidden > 50000) throw new Error('正文质量指标无效。');
+  // Rebuild bounded, redacted snapshot positions; imported metadata never grants
+  // permission to send automatically, and live DOM paths are not portable.
+  if (raw.provenance !== undefined && object(raw.provenance).version !== 1) throw new Error('段落来源版本无效。');
+  return { quality: assessQuality({ text: safeText, url: safeUrl, method, platform: enumeration(raw.platform, ['x', 'github', 'wechat', 'article', 'web'] as const), linkCharacters: density * safeText.length, hiddenRemoved: hidden, incomplete: q?.state !== 'complete' }), provenance: paragraphMap(safeText, safeUrl, 'backup') };
+}
 // Allowlist every field. Unknown configuration/credential fields never enter a backup or restored row.
 export function portableRow(table: BackupTable, value: unknown): Row {
   const r = object(value); const key = id(r.id);
@@ -57,7 +72,7 @@ export function portableRow(table: BackupTable, value: unknown): Row {
       return { id: key, entryKey: txt(r.entryKey), input: { ...fields(input), tagsText: txt(input.tagsText) }, baseRevision: r.baseRevision == null ? null : number(r.baseRevision), sourceTabId: null, sourcePageUrl: url(r.sourcePageUrl ?? ''), pendingCaptureId: r.pendingCaptureId == null ? null : id(r.pendingCaptureId), hasChanges: bool(r.hasChanges), ...dates() };
     }
     case 'screenshots': return { id: key, kind: enumeration(r.kind, ['visible', 'region']), width: number(r.width), height: number(r.height), originalBytes: number(r.originalBytes), sourceTabId: 0, sourceUrl: url(r.sourceUrl), sourceTitle: txt(r.sourceTitle), createdAt: number(r.createdAt) };
-    case 'contentCaptures': return { id: key, originalUrl: url(r.originalUrl ?? r.sourceUrl), sourceUrl: url(r.sourceUrl), platform: enumeration(r.platform, ['x', 'github', 'wechat', 'article', 'web']), siteName: txt(r.siteName), title: txt(r.title), author: nullable(r.author), publishedAt: nullable(r.publishedAt), text: txt(r.text), images: array(r.images).map(value => { const image = object(value); return { url: url(image.url), description: txt(image.description), kind: enumeration(image.kind, ['image', 'video-cover']) }; }), links: array(r.links).map(value => { const link = object(value); return { url: url(link.url), text: txt(link.text) }; }), githubLinks: array(r.githubLinks).map(value => url(value)), collectedAt: number(r.collectedAt), status: enumeration(r.status, ['readable', 'partial', 'unavailable']), warnings: texts(r.warnings), sourceTabId: null, screenshotIds: ids(r.screenshotIds), noteId: r.noteId == null ? null : id(r.noteId), updatedAt: number(r.updatedAt), textOrigin: enumeration(r.textOrigin, ['extracted', 'manual', 'edited', 'empty']) };
+    case 'contentCaptures': { const capture = { id: key, originalUrl: url(r.originalUrl ?? r.sourceUrl), sourceUrl: url(r.sourceUrl), platform: enumeration(r.platform, ['x', 'github', 'wechat', 'article', 'web']), siteName: txt(r.siteName), title: txt(r.title), author: nullable(r.author), publishedAt: nullable(r.publishedAt), text: txt(r.text), images: array(r.images).map(value => { const image = object(value); return { url: url(image.url), description: txt(image.description), kind: enumeration(image.kind, ['image', 'video-cover']) }; }), links: array(r.links).map(value => { const link = object(value); return { url: url(link.url), text: txt(link.text) }; }), githubLinks: array(r.githubLinks).map(value => url(value)), collectedAt: number(r.collectedAt), status: enumeration(r.status, ['readable', 'partial', 'unavailable']), warnings: texts(r.warnings), sourceTabId: null, screenshotIds: ids(r.screenshotIds), noteId: r.noteId == null ? null : id(r.noteId), updatedAt: number(r.updatedAt), textOrigin: enumeration(r.textOrigin, ['extracted', 'manual', 'edited', 'empty']) }; return { ...capture, ...captureMetadata(r, capture.text, capture.sourceUrl) }; }
     case 'settings': if (key !== 'general') throw new Error('未知设置项，拒绝导出或恢复。'); return { id: 'general', aiEnabled: bool(r.aiEnabled) };
     case 'analyses': {
       const result: Row = { id: key, noteId: id(r.noteId), createdAt: timestamp(r.createdAt), content: txt(r.content) };
@@ -95,7 +110,7 @@ export function references(table: BackupTable, row: Row): [BackupTable, string][
 }
 export function parseManifest(value: unknown): Manifest {
   const r = object(value);
-  if (r.format !== 'IdeaClip' || r.formatVersion !== 1 || typeof r.databaseVersion !== 'number' || !Number.isInteger(r.databaseVersion) || r.databaseVersion < 1 || r.databaseVersion > 7) throw new Error('备份格式或数据库版本不兼容，请使用支持该版本的 IdeaClip。');
+  if (r.format !== 'IdeaClip' || r.formatVersion !== 1 || typeof r.databaseVersion !== 'number' || !Number.isInteger(r.databaseVersion) || r.databaseVersion < 1 || r.databaseVersion > 8) throw new Error('备份格式或数据库版本不兼容，请使用支持该版本的 IdeaClip。');
   const createdAt = text(r.createdAt, 100); if (!Number.isFinite(Date.parse(createdAt))) throw new Error('备份创建时间无效。');
   const counts = emptyCounts(); const source = object(r.counts); let total = 0;
   for (const table of TABLES) { counts[table] = number(source[table]); total += counts[table]; }

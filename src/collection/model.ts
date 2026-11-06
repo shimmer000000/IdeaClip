@@ -1,3 +1,4 @@
+import type { TextQuality, ContentProvenance } from './quality';
 export type Platform = 'x' | 'github' | 'wechat' | 'article' | 'web';
 export const platformNames: Record<Platform, string> = { x: 'X / Twitter', github: 'GitHub', wechat: '微信公众号', article: '文章网站', web: '其他网页' };
 export interface PageLink { url: string; text: string }
@@ -16,6 +17,8 @@ export interface ExtractedPage {
   collectedAt: number;
   status: 'readable' | 'partial' | 'unavailable';
   warnings: string[];
+  quality?: TextQuality;
+  provenance?: ContentProvenance;
 }
 export interface ContentCapture extends ExtractedPage {
   originalUrl: string;

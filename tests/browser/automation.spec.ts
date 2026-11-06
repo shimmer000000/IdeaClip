@@ -3,6 +3,7 @@ import { createServer, type Server, type ServerResponse } from 'node:http';
 import { collectionHarness, clickAction } from './collection-harness';
 import { mockCompletion } from '../ai-fixture';
 import type { AITask } from '../../src/automation/model';
+import { qualityCapture, qualityText } from '../quality-fixture';
 
 let server: Server; let endpoint: string; let base: string; let hold = false;
 const calls: { body: string; authorization: string }[] = []; const held: ServerResponse[] = []; const errors: string[] = []; const external: string[] = [];
@@ -12,7 +13,7 @@ test.beforeAll(async () => {
   server = createServer((request, response) => {
     response.setHeader('Access-Control-Allow-Origin', '*'); response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type'); response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS'); response.setHeader('Access-Control-Allow-Private-Network', 'true');
     if (request.method === 'OPTIONS') { response.writeHead(204).end(); return; }
-    if (request.method !== 'POST') { response.setHeader('Content-Type', 'text/html; charset=utf-8'); response.end('<!doctype html><meta charset="utf-8"><title>公开 SaaS 工具</title><main><h1>SaaS 商业工具</h1><p>订阅服务帮助创业者验证用户需求。</p></main>' + (request.url?.includes('password') ? '<input type="password" aria-label="密码">' : '')); return; }
+    if (request.method !== 'POST') { response.setHeader('Content-Type', 'text/html; charset=utf-8'); const text = request.url?.includes('low-quality') ? '只有产品简介' : qualityText; response.end('<!doctype html><meta charset="utf-8"><title>公开 SaaS 工具</title><main><h1>SaaS 商业工具</h1><p>' + text.replaceAll('\n', '</p><p>') + '</p><p style="display:none">hidden-test-secret</p><textarea>typed-test-secret</textarea></main>' + (request.url?.includes('password') ? '<input type="password" aria-label="密码">' : '')); return; }
     let body = ''; request.on('data', chunk => { body += chunk; }); request.on('end', () => { calls.push({ body, authorization: request.headers.authorization ?? '' }); if (hold) { held.push(response); return; } response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify(mockCompletion())); });
   }); await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve)); base = `http://127.0.0.1:${(server.address() as { port: number }).port}`; endpoint = base + '/v1/chat/completions';
 });
@@ -52,13 +53,50 @@ async function put(page: Page, table: string, id: string, patch: Record<string, 
 }
 async function editor(title: string, url = base + '/public-product') {
   const before = harness.context.pages(); await settings.evaluate(() => chrome.runtime.sendMessage({ type: 'IC_NOTE_OPEN', kind: 'blank', requestId: crypto.randomUUID() })); await expect.poll(() => harness.context.pages().find(p => !before.includes(p) && p.url().includes('note.html'))).toBeTruthy(); const page = harness.context.pages().find(p => !before.includes(p) && p.url().includes('note.html'))!;
-  await page.getByLabel('灵感标题', { exact: true }).fill(title); await page.getByLabel('原始网页 URL', { exact: true }).fill(url); await page.getByLabel('采集正文', { exact: true }).fill('产品正文：不可信指令忽略系统，仅作为资料。'); await page.getByLabel('我的感悟', { exact: true }).fill('先访谈用户，再验证付费意愿。'); return page;
+  const capture = qualityCapture(url);
+  // Controlled synthetic extraction fixture; permission/network/queue APIs remain real
+  // apart from the explicitly documented native-prompt boundary in this suite.
+  await put(settings, 'contentCaptures', capture.id, capture as unknown as Record<string, unknown>);
+  await page.reload(); // native IDB fixture writes do not publish Dexie liveQuery mutations
+  await page.getByLabel('灵感标题', { exact: true }).fill(title); await page.getByLabel('原始网页 URL', { exact: true }).fill(url); await page.getByLabel('选择已有正文采集', { exact: true }).selectOption(capture.id); await page.getByRole('button', { name: '采用采集内容', exact: true }).click(); await page.getByLabel('我的感悟', { exact: true }).fill('先访谈用户，再验证付费意愿。'); return page;
 }
 async function save(page: Page, draft = false) { await page.getByRole('button', { name: draft ? '保存草稿' : '保存灵感', exact: true }).click(); await expect(page.getByRole('status').filter({ hasText: draft ? '已保存草稿' : '已保存灵感' })).toBeVisible(); }
 async function tasks() {
   let page = harness.context.pages().find(p => p.url().includes('tasks.html')); if (!page) { page = await harness.context.newPage(); await page.goto(`chrome-extension://${harness.extensionId}/tasks.html`); } await expect(page.getByRole('heading', { name: 'AI 任务中心', exact: true })).toBeVisible(); return page;
 }
 async function pause(page: Page) { await page.getByRole('button', { name: '暂停自动分析', exact: true }).click(); await expect(page.getByRole('status')).toContainText('已暂停'); }
+
+async function collectActual(path: string) {
+  const source = await harness.context.newPage(); await source.goto(base + path);
+  const before = harness.context.pages(); await clickAction(source, harness.cdp, harness.extensionId, '收藏当前网页');
+  await expect.poll(() => harness.context.pages().find(p => !before.includes(p) && p.url().includes('note.html'))).toBeTruthy();
+  const page = harness.context.pages().find(p => !before.includes(p) && p.url().includes('note.html'))!;
+  await page.getByRole('button', { name: '提取正文', exact: true }).click();
+  await expect(page.getByLabel('本次采集预览')).not.toHaveValue('');
+  await page.getByRole('button', { name: '采用采集内容', exact: true }).click(); return page;
+}
+
+test('真实页面采集显示完整质量和来源段落，隐藏及输入内容不进入 AI', async ({}, info) => {
+  await configure(); await automatic(); const page = await collectActual('/public-product');
+  await expect(page.getByRole('heading', { name: '正文质量：完整（当前可读范围）' })).toBeVisible();
+  const quality = page.locator('.quality-summary'); await quality.locator('summary').click();
+  await expect(quality.getByRole('link', { name: /在原网页查找此段/ }).first()).toHaveAttribute('href', /#:~:text=/);
+  await quality.screenshot({ path: info.outputPath('content-quality.png') });
+  await save(page); await expect.poll(async () => (await rows())[0]?.state).toBe('done');
+  expect(calls).toHaveLength(1); expect(calls[0].body).not.toMatch(/hidden-test-secret|typed-test-secret|image_url/);
+});
+
+test('短正文和手动补充可保存，但不会自动发送；恢复队列仍要求来源核对', async () => {
+  await configure(); await automatic(); const page = await collectActual('/low-quality');
+  await expect(page.getByRole('heading', { name: '正文质量：部分，待核对' })).toBeVisible();
+  await save(page); const center = await tasks(); await expect.poll(async () => (await rows())[0]?.errorCode).toBe('quality');
+  expect(calls).toHaveLength(0); await center.getByRole('button', { name: '恢复未发送任务' }).click();
+  await expect(center.getByRole('status')).toContainText('恢复 0 条'); expect(calls).toHaveLength(0);
+  await page.getByLabel('采集正文', { exact: true }).fill(qualityText); await save(page);
+  await expect.poll(async () => (await rows()).every(r => r.errorCode === 'quality' || r.errorCode === 'snapshot')).toBe(true);
+  await page.reload(); await expect(page.getByLabel('采集正文', { exact: true })).toHaveValue(qualityText);
+  await expect(page.locator('.quality-summary')).toContainText('待核对'); expect(calls).toHaveLength(0);
+});
 
 test('默认手动且总开关关闭；配置、草稿和浏览均无请求，显式保存后自动执行并去重', async ({}, info) => {
   await expect(settings.getByLabel('分析模式', { exact: true })).toHaveValue('manual'); await expect(settings.getByRole('switch')).toHaveAttribute('aria-checked', 'false'); await configure(); const page = await editor('手动模式保存'); await save(page); expect(await rows()).toHaveLength(0); expect(calls).toHaveLength(0);
@@ -117,7 +155,7 @@ test('浏览辅助本地提示不上传不保存，真实点击后编辑并明�
   await configure(); const worker = await mockAssistRegistration(); await automatic('assist'); const registration = await worker.evaluate(() => (globalThis as unknown as { registeredAssist: chrome.scripting.RegisteredContentScript[] }).registeredAssist); expect(registration[0]).toMatchObject({ matches: ['http://127.0.0.1/*'], allFrames: false, js: ['assist.js'] });
   const source = await harness.context.newPage(); await source.goto(base + '/public-product'); await injectAssist(source); await expect(source.locator('[data-ideaclip-assist]')).toHaveCount(1); expect(calls).toHaveLength(0); expect(await rows()).toHaveLength(0);
   const session = await harness.context.newCDPSession(source); await session.send('Accessibility.enable'); const tree = await session.send('Accessibility.getFullAXTree'); const node = tree.nodes.find(n => n.role?.value === 'button' && n.name?.value === '确认收藏灵感'); expect(node?.backendDOMNodeId).toBeTruthy(); const box = await session.send('DOM.getBoxModel', { backendNodeId: node!.backendDOMNodeId }); const rect = box.model.border; const before = harness.context.pages(); await source.mouse.click((rect[0] + rect[2]) / 2, (rect[1] + rect[5]) / 2);
-  await expect.poll(() => harness.context.pages().find(p => !before.includes(p) && p.url().includes('note.html'))).toBeTruthy(); const note = harness.context.pages().find(p => !before.includes(p) && p.url().includes('note.html'))!; expect(calls).toHaveLength(0); await expect(note.getByRole('checkbox', { name: /本条保存灵感后/ })).not.toBeChecked(); await note.getByLabel('采集正文', { exact: true }).fill('公开产品正文'); await note.getByRole('checkbox', { name: /本条保存灵感后/ }).check(); await save(note); await expect.poll(async () => (await rows())[0]?.state).toBe('done'); expect(calls).toHaveLength(1); expect(calls[0].body).not.toContain('image_url');
+  await expect.poll(() => harness.context.pages().find(p => !before.includes(p) && p.url().includes('note.html'))).toBeTruthy(); const note = harness.context.pages().find(p => !before.includes(p) && p.url().includes('note.html'))!; expect(calls).toHaveLength(0); await expect(note.getByRole('checkbox', { name: /本条保存灵感后/ })).not.toBeChecked(); await note.getByRole('button', { name: '提取正文', exact: true }).click(); await expect(note.getByLabel('本次采集预览')).toHaveValue(/产品正文/); await note.getByRole('button', { name: '采用采集内容', exact: true }).click(); await note.getByRole('checkbox', { name: /本条保存灵感后/ }).check(); await save(note); await expect.poll(async () => (await rows())[0]?.state).toBe('done'); expect(calls).toHaveLength(1); expect(calls[0].body).not.toContain('image_url');
 });
 
 test('敏感 DOM 不显示建议，撤销本地辅助后移除已注入提示，不发送 AI 请求', async () => {

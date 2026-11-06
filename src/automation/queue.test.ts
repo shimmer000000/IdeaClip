@@ -1,6 +1,7 @@
 import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { IdeaClipDB, createNote, setAIEnabled, type Note } from '../storage';
+import { IdeaClipDB, setAIEnabled, type Note } from '../storage';
+import { qualityCapture } from '../../tests/quality-fixture';
 import { AIEngine } from '../ai/engine';
 import { DEFAULT_CONFIG, getCredential, hasPermission } from '../ai/config';
 import { chatTransport } from '../ai/transport';
@@ -23,10 +24,16 @@ function executor(fetcher = vi.fn(async () => Response.json(mockCompletion())), 
   const engine = new AIEngine(database, { permission: async () => true, credential: async () => credential, transport: chatTransport(fetcher as typeof fetch), lock: async action => action(), ...extras }); engines.push(engine);
   const service = new QueueExecutor(engine, database, lock); executors.push(service); return { service, engine, fetcher };
 }
-async function note(url = 'https://example.com/post') { const id = await createNote({ title: '商业工具', url, body: '先验证用户需求', tags: [] }, database); return { id, task: (await database.aiTasks.where('noteId').equals(id).first())! }; }
+async function note(url = 'https://example.com/post') {
+  const capture = qualityCapture(url); await database.contentCaptures.add(capture);
+  const id = await beginDraft('fixture:' + crypto.randomUUID(), { title: '商业工具', sourcePageUrl: url }, database);
+  await patchDraft(id, { content: capture.text, captureIds: [capture.id], body: '先验证用户需求' }, { content: '', captureIds: [], body: '' }, database); await commitDraft(id, 'saved', undefined, database);
+  return { id, task: (await database.aiTasks.where('noteId').equals(id).first())! };
+}
 async function draft(saveState: 'draft' | 'saved', assisted = false) {
   const id = await beginDraft('draft:' + crypto.randomUUID(), { title: 'SaaS 创意', sourcePageUrl: 'https://example.com/product' }, database);
-  await patchDraft(id, { content: '产品正文' }, { content: '' }, database); await commitDraft(id, saveState, undefined, database, { assisted }); return id;
+  const capture = qualityCapture('https://example.com/product'); await database.contentCaptures.add(capture);
+  await patchDraft(id, { content: capture.text, captureIds: [capture.id] }, { content: '', captureIds: [] }, database); await commitDraft(id, saveState, undefined, database, { assisted }); return id;
 }
 beforeEach(async () => {
   database = new IdeaClipDB('automation-test-' + crypto.randomUUID()); await database.settings.put({ id: 'general', aiEnabled: true }); await database.aiConfig.put(config); await database.autoPolicy.put(policy());
@@ -68,6 +75,21 @@ describe('主动保存、范围授权与事务队列', () => {
 });
 
 describe('执行、快照、预算和取消', () => {
+  it.each(['missing', 'partial', 'edited', 'backup'])('入队后采集 %s 使自动执行暂停，恢复不能绕过质量门禁', async change => {
+    await pauseAutomatic('待校验', database); const saved = await note(); const record = (await database.notes.get(saved.id))!; const id = record.captureIds[0];
+    const capture = (await database.contentCaptures.get(id))!;
+    if (change === 'missing') await database.contentCaptures.delete(id);
+    if (change === 'partial') await database.contentCaptures.update(id, { quality: { ...capture.quality!, state: 'partial' } });
+    if (change === 'edited') await database.contentCaptures.update(id, { textOrigin: 'edited' });
+    if (change === 'backup') await database.contentCaptures.update(id, { provenance: { ...capture.provenance!, origin: 'backup' } });
+    expect(await resumeWaiting('session', database)).toMatchObject({ resumed: 0, stale: 1 });
+    expect((await database.aiTasks.get(saved.task.id))?.errorCode).toBe('quality');
+    // Even a corrupted waiting state must be checked again by the executor.
+    await database.aiTasks.update(saved.task.id, { state: 'waiting' });
+    const e = executor(); await e.service.execute(saved.task.id, 'session');
+    expect(e.fetcher).not.toHaveBeenCalled(); expect(await database.aiUsage.count()).toBe(0);
+    expect((await database.aiTasks.get(saved.task.id))?.state).toBe('paused');
+  });
   it('自动执行沿用 15 栏引擎与账本，绝不包含图片，执行两次不重复发送', async () => {
     const saved = await note(); const e = executor(); await e.service.execute(saved.task.id, 'session'); await e.service.execute(saved.task.id, 'session');
     expect(e.fetcher).toHaveBeenCalledTimes(1); const request = e.fetcher.mock.calls[0] as unknown as [string, RequestInit]; expect(request[1]).toMatchObject({ redirect: 'error', credentials: 'omit' }); expect(request[1].body).not.toContain('image_url'); expect(request[1].body).not.toContain('data:image');
@@ -154,6 +176,6 @@ describe('schema v7 与备份兼容', () => {
   it('schema6 升级7保留笔记、原图、分析、配置和账本，不自动授权', async () => {
     const old = new Dexie('automation-migrate-' + crypto.randomUUID()); await database.open(); const schema = Object.fromEntries(database.tables.filter(t => !['autoPolicy', 'aiTasks'].includes(t.name)).map(t => [t.name, [t.schema.primKey.src, ...t.schema.indexes.map(i => i.src)].join(', ')])); old.version(6).stores(schema);
     await old.table('notes').put({ id: 'old', title: '旧笔记', body: '旧感悟' } as Note); await old.table('screenshots').put({ id: 'pic', blob: new Blob(['old-image']) }); await old.table('analyses').put({ id: 'report', noteId: 'old', createdAt: 1, content: '旧报告' }); await old.table('aiConfig').put(config); await old.table('aiUsage').put({ id: 'budget', reservedMicros: 100 }); old.close();
-    const upgraded = new IdeaClipDB(old.name); try { await upgraded.open(); expect(upgraded.verno).toBe(7); expect((await upgraded.notes.get('old'))?.body).toBe('旧感悟'); expect(await (await upgraded.screenshots.get('pic'))!.blob.text()).toBe('old-image'); expect((await upgraded.analyses.get('report'))?.content).toBe('旧报告'); expect(await upgraded.aiConfig.count()).toBe(1); expect(await upgraded.aiUsage.count()).toBe(1); expect(await upgraded.autoPolicy.count()).toBe(0); expect(await upgraded.aiTasks.count()).toBe(0); } finally { await upgraded.delete(); }
+    const upgraded = new IdeaClipDB(old.name); try { await upgraded.open(); expect(upgraded.verno).toBe(8); expect((await upgraded.notes.get('old'))?.body).toBe('旧感悟'); expect(await (await upgraded.screenshots.get('pic'))!.blob.text()).toBe('old-image'); expect((await upgraded.analyses.get('report'))?.content).toBe('旧报告'); expect(await upgraded.aiConfig.count()).toBe(1); expect(await upgraded.aiUsage.count()).toBe(1); expect(await upgraded.autoPolicy.count()).toBe(0); expect(await upgraded.aiTasks.count()).toBe(0); } finally { await upgraded.delete(); }
   });
 });

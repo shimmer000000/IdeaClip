@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, deleteNote } from '../storage';
 import { httpUrl, platformNames } from '../collection/model';
+import { QualitySummary } from '../collection/QualitySummary';
+import { assessQuality } from '../collection/quality';
 import { adoptCapture, commitDraft, reloadSavedNote } from './repository';
 import { useDraft } from './useDraft';
 import type { NoteDraft } from './model';
@@ -68,6 +70,7 @@ function EditorForm({ draft }: { draft: NoteDraft }) {
     catch (error) { setError(`未重置编辑，当前输入仍在本页。${error instanceof Error ? error.message : ''}`); }
   }
   const originalUrl = httpUrl(input.url);
+  const contentSource = captures?.find(c => input.captureIds.includes(c.id) && c.text === input.content && c.sourceUrl === input.url);
   return <>
     <div className="note-save-status" aria-live="polite"><span role="status">{form.status}</span><span>{note?.saveState === 'saved' ? '已保存笔记' : note ? '已存为草稿' : '尚未提交为笔记'}{draft.hasChanges ? ' · 有未提交编辑' : ''}</span></div>
     {(error || form.error) && <div role="alert" className="error panel">{error || form.error}{form.error && <button type="button" onClick={() => { void run(async () => {}); }}>重试保留草稿</button>}{note && <button type="button" onClick={() => { void reloadSaved(); }}>重新读取已保存版本</button>}</div>}
@@ -87,7 +90,7 @@ function EditorForm({ draft }: { draft: NoteDraft }) {
       <label htmlFor="idea-content">采集正文</label><textarea id="idea-content" rows={10} maxLength={100000} value={input.content} onChange={e => change('content', e.target.value)} placeholder="提取后采用正文，也可以手动粘贴和修改。" />
       {input.captureIds.length > 0 && <p className="muted">已关联 {input.captureIds.length} 份采集记录，原始来源和完整性提示保留在采集预览中。{input.captureIds.map(id => <a key={id} href={`collection.html?id=${id}`} target="_blank" rel="noreferrer"> 查看采集 ↗ </a>)}</p>}
     </section>
-    <section className="panel note-section"><h2>我的感悟</h2><label className="sr-only" htmlFor="idea-thoughts">我的感悟</label><textarea id="idea-thoughts" rows={6} maxLength={100000} value={input.body} onChange={e => change('body', e.target.value)} placeholder="这件事为什么值得记录？它让你想到什么机会？" />
+    <QualitySummary quality={contentSource?.quality ?? assessQuality({ text: input.content, url: input.url, platform: input.platform })} provenance={contentSource?.provenance} text={input.content} url={input.url} /><section className="panel note-section"><h2>我的感悟</h2><label className="sr-only" htmlFor="idea-thoughts">我的感悟</label><textarea id="idea-thoughts" rows={6} maxLength={100000} value={input.body} onChange={e => change('body', e.target.value)} placeholder="这件事为什么值得记录？它让你想到什么机会？" />
       <h2>待研究问题</h2><label className="sr-only" htmlFor="idea-questions">待研究问题</label><textarea id="idea-questions" rows={4} maxLength={100000} value={input.researchQuestions} onChange={e => change('researchQuestions', e.target.value)} placeholder="接下来需要验证哪些假设？" />
     </section>
     <section className="panel note-section"><h2>分类与标签</h2><div className="metadata-row"><div><label htmlFor="idea-category">分类</label><input id="idea-category" maxLength={100} value={input.category} onChange={e => change('category', e.target.value)} placeholder="例如：产品机会" /></div><div><label htmlFor="idea-tags">标签</label><input id="idea-tags" maxLength={3000} value={input.tagsText} onChange={e => change('tagsText', e.target.value)} placeholder="多个标签用逗号分隔" /></div></div>

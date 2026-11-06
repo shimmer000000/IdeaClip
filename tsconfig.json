@@ -14,5 +14,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["src", "vite.config.ts", "vite.content.config.ts", "vite.assist.config.ts", "vitest.config.ts", "playwright.config.ts", "playwright.live.config.ts", "tests"]
+  "include": ["src", "vite.config.ts", "vite.content.config.ts", "vite.assist.config.ts", "vitest.config.ts", "playwright.config.ts", "playwright.live.config.ts", "playwright.native.config.ts", "tests"]
 }

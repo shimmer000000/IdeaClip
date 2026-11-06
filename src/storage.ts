@@ -77,6 +77,8 @@ export class IdeaClipDB extends Dexie {
     this.version(5).stores({ noteCatalog: 'id, saveState, site, category, createdAt, updatedAt', noteSearch: 'id', draftCatalog: 'id, [pending+updatedAt]', libraryState: 'id', screenshotThumbs: 'id' }).upgrade(migrateLibrary);
     this.version(6).stores({ aiConfig: 'id', aiUsage: 'id, day, createdAt, noteId, status', analyses: 'id, noteId, createdAt, [noteId+createdAt]' });
     this.version(7).stores({ autoPolicy: 'id', aiTasks: 'id, &dedupeKey, state, createdAt, [state+createdAt], noteId, attemptId' });
+    // Optional capture quality/provenance fields. Old records remain untouched and unverified.
+    this.version(8).stores({});
   }
 }
 export const db = new IdeaClipDB();
@@ -110,7 +112,7 @@ export async function createNote(input: NoteInput, database = db): Promise<strin
   const now = Date.now();
   const note: Note = { ...noteDefaults(clean.url), ...clean, id: crypto.randomUUID(), status: 'inbox', revision: 1, createdAt: now, updatedAt: now };
   let taskId: string | null = null;
-  await database.transaction('rw', [database.notes, database.noteCatalog, database.noteSearch, database.libraryState, database.autoPolicy, database.aiTasks, database.aiConfig, database.settings], async () => { await database.notes.add(note); await writeNoteIndex(note, database); taskId = await enqueueSavedNote(note, database); });
+  await database.transaction('rw', [database.notes, database.noteCatalog, database.noteSearch, database.libraryState, database.autoPolicy, database.aiTasks, database.aiConfig, database.settings, database.contentCaptures], async () => { await database.notes.add(note); await writeNoteIndex(note, database); taskId = await enqueueSavedNote(note, database); });
   if (taskId) wakeQueue();
   return note.id;
 }
@@ -118,7 +120,7 @@ export async function updateNote(id: string, input: NoteInput & { status: NoteSt
   const clean = cleanInput(input);
   if (!['inbox', 'incubating', 'archived'].includes(input.status)) throw new Error('无效的灵感状态。');
   let taskId: string | null = null;
-  await database.transaction('rw', [database.notes, database.noteCatalog, database.noteSearch, database.libraryState, database.autoPolicy, database.aiTasks, database.aiConfig, database.settings], async () => {
+  await database.transaction('rw', [database.notes, database.noteCatalog, database.noteSearch, database.libraryState, database.autoPolicy, database.aiTasks, database.aiConfig, database.settings, database.contentCaptures], async () => {
     const previous = await database.notes.get(id);
     if (!previous) throw new Error('这条灵感已不存在，请刷新列表。');
     await database.notes.update(id, { ...clean, status: input.status, revision: (previous.revision ?? 0) + 1, updatedAt: Date.now() });

@@ -1,4 +1,5 @@
 import { db } from '../storage';
+import { assessQuality, paragraphMap } from './quality';
 import { cleanText, githubProjects, httpUrl, MAX_IMAGES, MAX_LINKS, MAX_TEXT, type ContentCapture, type ExtractedPage } from './model';
 
 export async function storeExtraction(page: ExtractedPage, sourceTabId: number | null, database = db) {
@@ -21,6 +22,7 @@ export async function saveCaptureEdits(id: string, edits: CaptureEdits, database
       const previous = await database.contentCaptures.get(id);
       if (!previous) throw new Error('采集草稿不存在，请重新提取。');
       const screenshotIds = [...new Set(edits.screenshotIds)];
+      const changed = edits.text !== previous.text || sourceUrl !== previous.sourceUrl;
       for (const screenshotId of screenshotIds) if (!await database.screenshots.get(screenshotId)) throw new Error('所选截图已不存在，请取消选择后重试。');
       await database.contentCaptures.update(id, {
         title: cleanText(edits.title), sourceUrl, author: cleanText(edits.author ?? '').slice(0, 1000) || null, publishedAt: cleanText(edits.publishedAt ?? '').slice(0, 1000) || null,
@@ -28,6 +30,7 @@ export async function saveCaptureEdits(id: string, edits: CaptureEdits, database
         images: edits.images.map(image => ({ url: httpUrl(image.url)!, description: cleanText(image.description).slice(0, 2000), kind: image.kind === 'video-cover' ? 'video-cover' : 'image' })),
         screenshotIds, githubLinks: githubProjects([...edits.links.map(link => link.url), ...(edits.text.match(/https?:\/\/github\.com\/[\w.-]+\/[\w.-]+/g) ?? []), ...(previous.platform === 'github' ? [sourceUrl] : [])]),
         updatedAt: Date.now(), textOrigin: !edits.text ? 'empty' : edits.text === previous.text || previous.textOrigin === 'manual' ? previous.textOrigin : previous.text ? 'edited' : 'manual',
+        ...(changed ? { quality: assessQuality({ text: edits.text, url: sourceUrl, platform: previous.platform }), provenance: paragraphMap(edits.text, sourceUrl, 'edited') } : {}),
       });
     });
   } catch (e) {
