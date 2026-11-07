@@ -2,6 +2,16 @@
 
 IC-013 第二阶段提供可替换的 `ResearchAdapter` 和默认 `proxyAdapter`。浏览器只向用户明确配置、授权的完整代理端点发送请求；不向搜索结果 URL 直接发 fetch，不扫描标签页或浏览历史。兼容代理应实现本协议，并自行承担合法访问、服务商授权、DNS/IP/重定向及服务端预算控制。页面中的命令和代码不执行。
 
+## Windows 无命令启动
+
+双击 `windows/Start-Research.cmd` 打开Windows原生服务窗口。脚本使用系统Windows PowerShell 5.1，只对本脚本进程使用执行策略参数，不修改系统执行策略或安装服务。Node24+存在、扩展ID/精确来源域名/代理密钥完整、8788端口空闲后才能启动。
+
+代理访问Token默认随机生成，主动复制粘贴到扩展；30秒后仅在剪贴板仍为原值时清理。Brave Key通过遮罩输入框在本机填写，可以留空。没有密钥配置文件、命令行密钥、自动搜索或上游连接测试。Node子进程隐藏窗口，经匿名stdin接收一次配置；不把密钥放入argv或继承的Key环境变量。服务进程仍需在内存中持有密钥，本机同用户恶意软件/调试并非此机制可防御。
+
+窗口需保持打开；点击安全停止或关闭窗口通过该子进程stdin发送stop，正常关闭HTTP连接，5秒未退出才终止所持有的子进程句柄。不会按端口或进程名杀其他程序。窗口异常退出导致管道EOF时子进程停止；不自动重启或续发费用未知任务。不提供常驻系统服务、开机自启、局域网或公网监听。
+
+下述环境变量方式继续提供给技术用户，普通Windows用户使用服务窗口即可。
+
 ## 参考实现与服务范围
 
 `tools/research-proxy.ts` 是可选自有代理参考实现，需要 Node.js 24+；插件和构建不会启动它。仅使用 Node 内置 HTTP/HTTPS、DNS、net、crypto，无新增 npm 依赖。当前内置上游为 Brave Web Search、公开 HTTPS HTML/纯文本和 GitHub 公开仓库元数据。Brave 协议依据[官方文档](https://api-dashboard.search.brave.com/app/documentation/web-search/get-started)：固定 `https://api.search.brave.com/res/v1/web/search`，通过 `X-Subscription-Token` 认证；不调用 LLM Context 等额外接口。真实账户与收费尚未验收。
@@ -38,6 +48,24 @@ IC-013 第二阶段提供可替换的 `ResearchAdapter` 和默认 `proxyAdapter`
 - github：value 为 `https://github.com/owner/repo`；参考代理只请求固定 GitHub 公开 API，返回公开名称、描述、许可证标识、星标/fork、归档、创建与最近推送时间。未认证访问，不发送 GitHub Token，不读私有仓库，不下载或运行项目。
 
 read/github 返回 URL 必须与确认的标准化 URL 完全一致，客户端拒绝换源。错误使用非2xx与安全错误码，不返回上游错误正文或凭据。响应最多2 MiB，搜索结果最多5条；客户端正文上限100–30000字符，超出明确标记 partial。HTML在惰性 template 中清除脚本、资源、事件属性、表单、隐藏/导航区域后交给 Readability，不挂入活动页面，不下载图片。
+
+## 免费健康检查与错误分类（IC-014）
+
+主动POST到同一完整代理端点，沿用Origin和Bearer认证，不更换路径、不申请新权限、不改变联网开关：
+
+```json
+{"version":1,"operation":{"kind":"health"}}
+```
+
+响应示例（无密钥、无研究正文）：
+
+```json
+{"version":1,"service":"IdeaClipResearchProxy","noUpstreamRequests":true,"search":{"provider":"brave","configured":false,"verified":false},"allowedHosts":["github.com"],"usage":{"day":"2026-11-07","searchRequests":0,"searchLimit":50}}
+```
+
+只返回本地配置、来源白名单与进程内搜索次数。`configured:true`只代表填写了Key，`verified:false`始终明确账户、额度和上游网络未验证。没有上游健康探测、模型请求或付费请求，健康检查不计入客户端研究账本/服务端搜索次数。扩展只使用已保存端点、会话凭据和域名授权，5秒超时、16 KiB响应上限、禁止重定向；连接失败不自动重试。旧或自有代理应实现同一无上游访问契约，否则显示请求失败，不能把任意搜索API URL作为代理。
+
+研究操作的安全错误码包括 `search_not_configured`、`search_auth`（上游401/403）、`search_quota`（402/429，可能额度或频率受限）、`search_unavailable`（5xx）、`search_invalid`、`search_budget`（服务端次数限制）。不向扩展传递上游错误正文/Key。已发搜索及失败/未知计入上限和本机估算，健康不计费；实际服务商账单仍以账户为准。搜索空结果或结果全被来源白名单过滤时保存完成历史并明确提示，不擅自扩大域名或自动重试。
 
 ## SSRF 与凭据边界
 

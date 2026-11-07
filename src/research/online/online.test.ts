@@ -1,3 +1,4 @@
+import { ResearchFailure } from './errors';
 import { beforeEach, afterEach, it, expect, vi } from 'vitest';
 import Dexie from 'dexie';
 import { JSDOM } from 'jsdom';
@@ -41,3 +42,5 @@ it('v12→13增量升级完整保留研究计划和旧表；中断记录不作�
 
 it('研究代理拒绝远程私网/IP端点，只允许明确本机代理或公开HTTPS服务',()=>{for(const endpoint of ['https://10.0.0.1/research','https://127.0.0.1/research','http://remote.example/research','https://intranet.local/research'])expect(()=>validateResearchConfig({...config(),endpoint})).toThrow();expect(validateResearchConfig(config()).endpoint).toBe(key.endpoint);});
 it('过长研究AI资料在预览时明确拒绝，不静默丢弃来源或发起付费请求',async()=>{const {e,complete}=await aiSetup();const ids=[];for(let i=0;i<3;i++){const s=await source();s.content='公开资料'.repeat(6000);s.excerpt=s.content.slice(0,1000);s.hash=await sourceDigest(s);await database.researchSources.put(s);ids.push(s.id);}await expect(e.previewResearch('study',ids)).rejects.toThrow('200000');expect(complete).not.toHaveBeenCalled();});
+
+it('搜索空结果保留历史提醒，不自动扩域或重试；额度不足分类保留到账本和失败历史',async()=>{const first=service(vi.fn(async()=>[]));const p=await first.s.preview('study','custom','空结果',['关键词'],[]);await first.s.execute(p.id);expect((await database.researchRuns.get(p.id))?.reason).toContain('白名单');expect(first.execute).toHaveBeenCalledTimes(1);const second=service(vi.fn(async()=>{throw new ResearchFailure('search_quota');}));const q=await second.s.preview('study','custom','额度',['关键词'],[]);await expect(second.s.execute(q.id)).rejects.toThrow('额度');expect((await database.researchRuns.get(q.id))?.reason).toContain('额度');expect((await database.researchUsage.where('runId').equals(q.id).first())?.reservedMicros).toBe(10000);expect(second.execute).toHaveBeenCalledTimes(1);});

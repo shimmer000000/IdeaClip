@@ -1,3 +1,4 @@
+import { ResearchFailure } from './errors';
 import Dexie, { liveQuery } from 'dexie';
 import { db, type IdeaClipDB } from '../../storage';
 import { digest } from '../../backup/zip';
@@ -28,7 +29,7 @@ export class OnlineResearch {
  }
  async remaining(run:ResearchRun){if(run.imported)throw new Error('备份任务无执行授权，请重新填写研究请求并确认。');if(run.next>=run.operations.length)throw new Error('没有确认未发送的剩余请求；已发/失败请求不会重试。');await this.gate();const ops=run.operations.slice(run.next);return this.preview(run.studyId,run.topic,run.question,ops.filter(o=>o.kind==='search').map(o=>o.value),ops.filter(o=>o.kind!=='search').map(o=>o.value));}
  async execute(id:string){const p=this.previews.get(id);this.previews.delete(id);if(!p)throw new Error('本次确认已使用或失效，请重新预览。');const pending={controller:new AbortController(),state:'cancelled' as 'paused'|'cancelled'};this.pending.set(id,pending);const signal=pending.controller.signal;
-  let run:ResearchRun|undefined;
+  let run:ResearchRun|undefined;const notices:string[]=[];
   const checkPlan=async()=>{const plan=await this.database.researchPlans.get(p.studyId);if(!plan||await Dexie.waitFor(digest(new Blob([JSON.stringify(plan)])))!==p.planHash)throw new Error('研究计划已变化，请重新预览。');};
   try{return await this.d.lock('ideaclip-online-research',async()=>{
    active(signal);await this.gate(p);await checkPlan();const spent=(await this.database.researchUsage.where('day').equals(new Date(this.d.now()).toISOString().slice(0,10)).toArray()).reduce((n,u)=>n+u.reservedMicros,0);if(spent+p.costMicros>Math.floor(p.config.dailyBudgetUsd*1e6))throw new Error('研究每日剩余预算不足，未发送请求。');const now=this.d.now();run=validateRun({id:p.id,studyId:p.studyId,createdAt:now,updatedAt:now,question:p.question,topic:p.topic,operations:p.operations,next:0,state:'running',reason:'',revision:p.revision});await this.database.researchRuns.add(run);
@@ -42,13 +43,13 @@ export class OnlineResearch {
     try{
       active(signal);await this.gate(p);timer=setTimeout(()=>{timedOut=true;request.abort();},c.timeoutMs);
       const results=await this.d.adapter.execute(op,c,key.value,request.signal);active(signal);await this.gate(p);await checkPlan();
-      const sources:ResearchSource[]=[];for(const r of results){const safe={...r,title:redact(r.title),content:redact(r.content)};if(key.value&&JSON.stringify(safe).includes(key.value))throw new Error('来源包含凭据。');sources.push(validateSource({...safe,id:crypto.randomUUID(),studyId:p.studyId,runId:p.id,question:p.question,collectedAt:this.d.now(),hash:await sourceDigest(safe)}));}
+      if(op.kind==='search'&&!results.length)notices.push('搜索结果为空或均不在来源白名单内；未自动扩展域名或重试。');const sources:ResearchSource[]=[];for(const r of results){const safe={...r,title:redact(r.title),content:redact(r.content)};if(key.value&&JSON.stringify(safe).includes(key.value))throw new Error('来源包含凭据。');sources.push(validateSource({...safe,id:crypto.randomUUID(),studyId:p.studyId,runId:p.id,question:p.question,collectedAt:this.d.now(),hash:await sourceDigest(safe)}));}
       await this.database.transaction('rw',[this.database.researchSources,this.database.researchUsage,this.database.researchPlans,this.database.researchConfig],async()=>{active(signal);if(!(await this.database.researchConfig.get('online'))?.enabled)throw new Error('联网研究已关闭。');await checkPlan();if(await this.database.researchSources.where('studyId').equals(p.studyId).count()+sources.length>500)throw new Error('研究资料超过500条上限，请导出并新建后续研究。');await this.database.researchSources.bulkAdd(sources);await this.database.researchUsage.update(usage.id,{state:'succeeded'});});
-    }catch{await this.database.researchUsage.update(usage.id,{state:request.signal.aborted?'unknown':'failed'});if(op.kind!=='search'&&!signal.aborted){const failed={id:crypto.randomUUID(),studyId:p.studyId,runId:p.id,question:p.question,type:op.kind==='github'?'github' as const:'webpage' as const,url:op.value,title:'读取失败',content:'',publishedAt:null,collectedAt:this.d.now(),status:'failed' as const,reason:'读取失败、超时或返回不符合安全规则；未自动重试。'};await this.database.researchSources.add(validateSource({...failed,hash:await sourceDigest(failed)})).catch(()=>{});}throw new Error(timedOut?'研究请求超时，费用可能已产生，未自动重试。':'研究请求失败或已停止，费用可能已产生；请核对后人工处理。');}
+    }catch(e){await this.database.researchUsage.update(usage.id,{state:request.signal.aborted?'unknown':'failed'});if(op.kind!=='search'&&!signal.aborted){const failed={id:crypto.randomUUID(),studyId:p.studyId,runId:p.id,question:p.question,type:op.kind==='github'?'github' as const:'webpage' as const,url:op.value,title:'读取失败',content:'',publishedAt:null,collectedAt:this.d.now(),status:'failed' as const,reason:'读取失败、超时或返回不符合安全规则；未自动重试。'};await this.database.researchSources.add(validateSource({...failed,hash:await sourceDigest(failed)})).catch(()=>{});}if(e instanceof ResearchFailure)throw e;throw new Error(timedOut?'研究请求超时，费用可能已产生，未自动重试。':'研究请求失败或已停止，费用可能已产生；请核对后人工处理。');}
     finally{if(timer)clearTimeout(timer);signal.removeEventListener('abort',stop);}
    }
-   active(signal);await this.database.researchRuns.update(p.id,{state:'completed',updatedAt:this.d.now(),reason:'本次已确认请求完成；结果仍需核对。'});return p.id;
-  },signal);}catch(e){if(run)await this.database.researchRuns.update(p.id,{state:signal.aborted?pending.state:'failed',updatedAt:this.d.now(),reason:signal.aborted?'已停止；已发但结果未知的请求不会自动重试。':e instanceof Error&&/预算|变化|失效/.test(e.message)?e.message:'安全校验或请求失败，未自动重试。'}).catch(()=>{});throw e;}finally{this.pending.delete(id);}
+   active(signal);await this.database.researchRuns.update(p.id,{state:'completed',updatedAt:this.d.now(),reason:[...notices,'本次已确认请求完成；结果仍需核对。'].join(' ')});return p.id;
+  },signal);}catch(e){if(run)await this.database.researchRuns.update(p.id,{state:signal.aborted?pending.state:'failed',updatedAt:this.d.now(),reason:signal.aborted?'已停止；已发但结果未知的请求不会自动重试。':e instanceof ResearchFailure?e.message:e instanceof Error&&/预算|变化|失效/.test(e.message)?e.message:'安全校验或请求失败，未自动重试。'}).catch(()=>{});throw e;}finally{this.pending.delete(id);}
  }
  async recover(){
   for(const run of await this.database.researchRuns.where('state').equals('running').toArray()){

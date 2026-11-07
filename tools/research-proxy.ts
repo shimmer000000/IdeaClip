@@ -45,6 +45,7 @@ function json(res:ServerResponse,status:number,value:unknown){if(res.destroyed)r
 export function createResearchProxy(options:ProxyOptions){
  if(!/^[\x21-\x7e]{16,1000}$/.test(options.token)||!options.origins.length||options.origins.some(o=>!/^chrome-extension:\/\/[a-p]{32}$/.test(o)))throw new Error('Configure a private token and exact extension origins.');
  const hosts=[...new Set(options.hosts.map(h=>h.toLowerCase().trim()))];if(!hosts.length||hosts.length>20||hosts.some(h=>!h.includes('.')||isIP(h)||!/^[a-z0-9.-]+$/.test(h)||/(^|\.)(localhost|local|internal|arpa|onion|test|invalid)$/.test(h)))throw new Error('Configure public source host allowlist.');
+ if(options.braveKey&&!/^[\x21-\x7e]{8,1000}$/.test(options.braveKey))throw new Error('Invalid search configuration.');
  const get=options.get??secureGet;let day='',searches=0;
  const server=createServer(async(req,res)=>{
   const send=(status:number,value:unknown)=>{const raw=JSON.stringify(value);if([options.token,options.braveKey].some(k=>k&&raw.includes(k)))json(res,400,{error:'credential-in-response'});else json(res,status,value);};
@@ -54,11 +55,13 @@ export function createResearchProxy(options:ProxyOptions){
   if(req.method!=='POST'||req.url!=='/research'||!equal(req.headers.authorization??'',`Bearer ${options.token}`)){send(403,{error:'authorization-denied'});return;}
   const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),20000);res.on('close',()=>{if(!res.writableEnded)controller.abort();});
   try{
-   const r=await body(req),op=object(r.operation);if(r.version!==1||!Array.isArray(r.allowHosts)||r.allowHosts.length>20||!r.allowHosts.length||r.allowHosts.some(h=>typeof h!=='string'||!hosts.includes(h)))throw new Error('allowlist');const allowed=r.allowHosts as string[];
+   const r=await body(req),op=object(r.operation);if(r.version!==1)throw new Error('version');
+   if(op.kind==='health'){send(200,{version:1,service:'IdeaClipResearchProxy',noUpstreamRequests:true,search:{provider:'brave',configured:!!options.braveKey,verified:false},allowedHosts:hosts,usage:{day:new Date().toISOString().slice(0,10),searchRequests:day===new Date().toISOString().slice(0,10)?searches:0,searchLimit:options.maxDailySearches??50}});return;}
+   if(r.version!==1||!Array.isArray(r.allowHosts)||r.allowHosts.length>20||!r.allowHosts.length||r.allowHosts.some(h=>typeof h!=='string'||!hosts.includes(h)))throw new Error('allowlist');const allowed=r.allowHosts as string[];
    const value=str(op.value,4000);if(op.kind==='search'){
-    if(!options.braveKey||!value.trim()||value.length>500)throw new Error('search-config');const today=new Date().toISOString().slice(0,10);if(today!==day){day=today;searches=0;}if(searches>=(options.maxDailySearches??50))throw new Error('search-budget');searches++;
+    if(!options.braveKey){send(400,{error:'search_not_configured'});return;}if(!value.trim()||value.length>500)throw new Error('search-config');const today=new Date().toISOString().slice(0,10);if(today!==day){day=today;searches=0;}if(searches>=(options.maxDailySearches??50)){send(429,{error:'search_budget'});return;}searches++;
     const url=new URL('https://api.search.brave.com/res/v1/web/search');url.searchParams.set('q',value+' ('+allowed.map(h=>'site:'+h).join(' OR ')+')');url.searchParams.set('count','5');url.searchParams.set('safesearch','strict');
-    const response=await get(url,{'Accept':'application/json','X-Subscription-Token':options.braveKey},controller.signal);if(response.status!==200)throw new Error('search-failed');const payload=object(JSON.parse(response.body));const web=object(payload.web??{});const results=Array.isArray(web.results)?web.results.slice(0,5):[];
+    const response=await get(url,{'Accept':'application/json','X-Subscription-Token':options.braveKey},controller.signal);if(response.status!==200){send(400,{error:[401,403].includes(response.status)?'search_auth':[402,429].includes(response.status)?'search_quota':response.status>=500?'search_unavailable':'search_invalid'});return;}const payload=object(JSON.parse(response.body));const web=object(payload.web??{});const results=Array.isArray(web.results)?web.results.slice(0,5):[];
     const safe=results.flatMap(item=>{try{const x=object(item),u=safeSourceUrl(x.url,allowed);return [{url:u.href,title:str(x.title,1000),snippet:str(x.description??'',30000),publishedAt:null}];}catch{return [];}});send(200,{version:1,results:safe});return;
    }
    const source=safeSourceUrl(value,allowed);

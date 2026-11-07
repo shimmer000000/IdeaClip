@@ -1,3 +1,4 @@
+import { proxyFailure } from './errors';
 import { Readability } from '@mozilla/readability';
 import { obj, txt, list, researchUrl, type Operation, type ResearchConfig } from './model';
 export interface SourceData {url:string;title:string;content:string;publishedAt:string|null;status:'snippet'|'readable'|'partial'|'unreadable';type:'search'|'webpage'|'github';reason:string}
@@ -21,10 +22,14 @@ export function parseProxyResponse(value:unknown,op:Operation,c:ResearchConfig):
  return [{url,title:txt(raw.title,1000),content,publishedAt:date(raw.publishedAt),status:!content?'unreadable':truncated?'partial':'readable',type:op.kind==='github'?'github':'webpage',reason:!content?'未取得公开可读正文；不绕过登录或访问限制。':truncated?'正文已按本次长度上限截取，资料不完整。':'代理公开读取，尚未独立核验。'}];
 }
 function date(v:unknown){if(v===null||v===undefined||v==='')return null;const s=txt(v,100);if(!Number.isFinite(Date.parse(s)))throw new Error('来源时间无效。');return s;}
-export function proxyAdapter(fetcher:typeof fetch=fetch):ResearchAdapter{return {async execute(op,c,key,signal){
- const response=await fetcher(c.endpoint,{method:'POST',redirect:'error',credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store',signal,headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},body:JSON.stringify({version:1,operation:op,allowHosts:c.hosts,maxText:c.maxText})});
- if(!response.ok||response.redirected||!response.headers.get('content-type')?.includes('application/json'))throw new Error('研究代理请求失败或不支持该响应；不自动重试。');
+export async function proxyJSON(fetcher:typeof fetch,c:ResearchConfig,key:string,payload:unknown,signal:AbortSignal,maxBytes=2*1024*1024){
+ const response=await fetcher(c.endpoint,{method:'POST',redirect:'error',credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store',signal,headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},body:JSON.stringify(payload)});
+ if(response.redirected||!response.headers.get('content-type')?.includes('application/json'))throw new Error('研究代理响应格式无效，未自动重试。');
  if(!response.body)throw new Error('研究响应为空。');const reader=response.body.getReader();const chunks:Uint8Array[]=[];let size=0;
- try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>2*1024*1024)throw new Error('研究响应超过2 MiB安全上限。');chunks.push(value);}}finally{await reader.cancel().catch(()=>{});}
- const text=new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from(chunks.flatMap(a=>[...a])));if(key&&text.includes(key))throw new Error('研究响应包含凭据，已丢弃。');return parseProxyResponse(JSON.parse(text),op,c);
+ try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>maxBytes)throw new Error('研究响应超过安全上限。');chunks.push(value);}}finally{await reader.cancel().catch(()=>{});}
+ const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
+ const text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);if(key&&text.includes(key))throw new Error('研究响应包含凭据，已丢弃。');const raw=obj(JSON.parse(text));if(!response.ok)throw proxyFailure(raw.error);return raw;
+}
+export function proxyAdapter(fetcher:typeof fetch=fetch):ResearchAdapter{return {async execute(op,c,key,signal){
+ return parseProxyResponse(await proxyJSON(fetcher,c,key,{version:1,operation:op,allowHosts:c.hosts,maxText:c.maxText},signal),op,c);
 }};}
