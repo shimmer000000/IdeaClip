@@ -12,6 +12,14 @@ IC-013 第二阶段提供可替换的 `ResearchAdapter` 和默认 `proxyAdapter`
 
 下述环境变量方式继续提供给技术用户，普通Windows用户使用服务窗口即可。
 
+### Brave Key 是什么，是否必须填写
+
+Brave Search API Key 是搜索服务凭证，与本地代理访问 Token、DeepSeek 模型 Key 分开。只有关键词搜索需要它；直接填写公开网页 URL 或 GitHub 仓库 URL、免费健康检查均可在 Brave 留空时使用。缺少搜索配置不等于本地代理未启动。
+
+如以后需要关键词搜索，由用户在 [Brave 官方控制台](https://api-dashboard.search.brave.com/documentation/guides/authentication)自行选择当前套餐并创建 Key；费用、额度以账户当时显示为准，不自动申请或购买。仅在本地服务窗口的遮罩输入框填写，不发聊天、不填扩展、不写普通配置文件或终端命令。填写 Key 或健康检查成功都不证明真实搜索通过；每次实际联调仍须先确认关键词、请求数量、估算费用及可能消耗额度。
+
+IC-016 的三个公开来源已通过生产安全代理进入独立 Chrome 验证，详情见 [验收记录](IC-016-VALIDATION.md)。普通 Mock 与显式免费来源 live 测试分别记证和隔离输出，禁止自动化测试调用真实付费搜索或模型。
+
 ## 参考实现与服务范围
 
 `tools/research-proxy.ts` 是可选自有代理参考实现，需要 Node.js 24+；插件和构建不会启动它。仅使用 Node 内置 HTTP/HTTPS、DNS、net、crypto，无新增 npm 依赖。当前内置上游为 Brave Web Search、公开 HTTPS HTML/纯文本和 GitHub 公开仓库元数据。Brave 协议依据[官方文档](https://api-dashboard.search.brave.com/app/documentation/web-search/get-started)：固定 `https://api.search.brave.com/res/v1/web/search`，通过 `X-Subscription-Token` 认证；不调用 LLM Context 等额外接口。真实账户与收费尚未验收。

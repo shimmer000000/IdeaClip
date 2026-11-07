@@ -4,6 +4,7 @@ dist/
 coverage/
 test-results/
 test-results-native/
+test-results-live/
 playwright-report/
 .env
 .env.*
