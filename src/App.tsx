@@ -13,7 +13,7 @@ import { AutomationSettings } from './automation/AutomationSettings';
 const messageOf = (error: unknown) => error instanceof Error ? error.message : '操作失败，请重试。';
 
 function Header({ compact = false }: { compact?: boolean }) {
-  return <header><a className="brand" href="notes.html"><span className="mark">i</span>IdeaClip<span className="version">初始版</span></a>{!compact && <nav aria-label="主导航"><a href="notes.html">灵感库</a><a href="tasks.html">AI 任务中心</a><a href="settings.html">设置</a></nav>}</header>;
+  return <header><a className="brand" href="notes.html"><span className="mark">i</span>IdeaClip<span className="version">初始版</span></a>{!compact && <nav aria-label="主导航"><a href="notes.html">灵感库</a><a href="notes.html?research">深度研究</a><a href="tasks.html">AI 任务中心</a><a href="settings.html">设置</a></nav>}</header>;
 }
 
 export function Popup() {

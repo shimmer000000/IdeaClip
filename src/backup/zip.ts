@@ -19,7 +19,7 @@ export async function digest(blob: Blob) {
 }
 function header(length: number) { const bytes = new Uint8Array(length); return { bytes, view: new DataView(bytes.buffer) }; }
 function safeName(name: string) {
-  if (!/^(manifest\.json|data\/(notes|noteDrafts|screenshots|contentCaptures|settings|analyses|projects|aiTemplates|comparisonReports)\/\d{6}\.json|images\/\d{6}\.(png|webp))$/.test(name)) throw new Error('ZIP 包含非法路径或未知文件。');
+  if (!/^(manifest\.json|data\/(notes|noteDrafts|screenshots|contentCaptures|settings|analyses|projects|aiTemplates|comparisonReports|researchPlans)\/\d{6}\.json|images\/\d{6}\.(png|webp))$/.test(name)) throw new Error('ZIP 包含非法路径或未知文件。');
 }
 export async function writeZip(entries: ZipEntry[], progress?: (completed: number) => void): Promise<Blob> {
   if (entries.length > MAX_ENTRIES) throw new Error('备份文件数量超过安全上限。');

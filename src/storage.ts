@@ -41,6 +41,7 @@ export interface Screenshot {
 }
 
 export class IdeaClipDB extends Dexie {
+  researchPlans!: Table<import('./research/model').ResearchPlan, string>;
   notes!: Table<Note, string>;
   settings!: Table<Settings, string>;
   analyses!: Table<Analysis, string>;
@@ -88,6 +89,7 @@ export class IdeaClipDB extends Dexie {
     this.version(9).stores({ aiTemplates: 'id, updatedAt', skillPreferences: 'id' });
     this.version(10).stores({ comparisonReports: 'id, createdAt' });
     this.version(11).stores({});
+    this.version(12).stores({ researchPlans: 'id, updatedAt, createdAt' });
   }
 }
 export const db = new IdeaClipDB();
