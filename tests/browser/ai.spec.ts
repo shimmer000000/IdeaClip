@@ -62,13 +62,38 @@ async function configure(options: { vision?: boolean; persistent?: boolean; budg
   await settings.getByLabel('AI 服务商', { exact: true }).selectOption('custom'); await settings.getByLabel('AI 模型名称', { exact: true }).fill('mock-model'); await settings.getByLabel('AI 接口地址', { exact: true }).fill(endpoint); await settings.getByLabel('AI API Key', { exact: true }).fill(key); await settings.getByLabel('AI 每日预算', { exact: true }).fill(options.budget ?? '1'); await settings.getByLabel('AI 输入单价', { exact: true }).fill('1'); await settings.getByLabel('AI 输出单价', { exact: true }).fill('1'); await settings.getByLabel('AI 请求超时', { exact: true }).fill(options.timeout ?? '60000');
   if (options.vision) await settings.getByRole('checkbox', { name: /我已按服务商文档确认/ }).check();
   if (options.persistent) { await settings.getByRole('checkbox', { name: /长期本地保存密钥（默认关闭）/ }).check(); await settings.getByRole('checkbox', { name: '我理解长期本地保存密钥的安全风险' }).check(); }
-  await settings.getByRole('checkbox', { name: /我授权向上方指定端点/ }).check(); await settings.getByRole('button', { name: '保存配置并授权域名' }).click(); await expect(settings.getByText(/配置与域名授权已保存|此端点已有.*凭据，密钥不会回显/)).toBeVisible(); await expect(settings.getByLabel('AI API Key', { exact: true })).toHaveValue('');
+  await settings.getByRole('checkbox', { name: /我授权向上方指定端点/ }).check(); await settings.getByRole('button', { name: '保存配置并授权域名' }).click(); await expect(settings.getByText(/保存成功：配置与域名授权已保存/)).toBeVisible(); await expect(settings.getByLabel('AI API Key', { exact: true })).toHaveValue('');
 }
 async function enable() { await settings.getByRole('switch', { name: 'AI 分析总开关' }).click(); await expect(settings.getByRole('switch', { name: 'AI 分析总开关' })).toHaveAttribute('aria-checked', 'true'); }
 async function preview(target = page) { await target.getByRole('button', { name: /AI 分析：预览发送内容|重新分析：预览发送内容|重试：重新预览并确认/ }).click(); await expect(target.getByRole('dialog', { name: '本次 AI 分析确认' })).toBeVisible(); }
 async function confirm(target = page, images = false) { const dialog = target.getByRole('dialog', { name: '本次 AI 分析确认' }); await dialog.getByRole('checkbox', { name: /我确认发送上述资料/ }).check(); if (images) await dialog.getByRole('checkbox', { name: /我明确同意上传/ }).check(); await dialog.getByRole('button', { name: '确认并发起本次分析' }).click(); }
 async function waitReport(target = page) { await expect(target.getByRole('heading', { name: '商业分析报告', exact: true })).toBeVisible(); await expect(target.locator('.ai-report section')).toHaveCount(15); }
 async function downloadBackup(info: TestInfo) { const received = settings.waitForEvent('download'); await settings.getByRole('button', { name: '立即备份', exact: true }).click(); const file = await received; const path = info.outputPath('AI-Report-Backup.zip'); await mkdir(dirname(path), { recursive: true }); await file.saveAs(path); return path; }
+
+for (const persistent of [false, true]) test(`IC-012：${persistent?'长期':'会话'}凭据读取延迟不覆盖保存成功，刷新保留配置且清除后不显示旧状态`,async()=>{
+  await settings.evaluate(()=>{
+    const state=globalThis as unknown as {holdCredentialRead:boolean;credentialReleases:(()=>void)[]};
+    state.holdCredentialRead=false;state.credentialReleases=[];
+    for(const area of [chrome.storage.local,chrome.storage.session]) {
+      // This test intercepts only the promise-based string-key reads used by getCredential.
+      const get=area.get.bind(area) as unknown as (keys:string)=>Promise<Record<string,unknown>>;const set=area.set.bind(area);
+      area.get=(async (keys:string)=>{if(state.holdCredentialRead)await new Promise<void>(resolve=>state.credentialReleases.push(resolve));return get(keys);}) as unknown as typeof area.get;
+      area.set=(async items=>{await set(items);if(Object.hasOwn(items,'ideaclip-ai-credential'))state.holdCredentialRead=true;}) as typeof area.set;
+    }
+  });
+  await configure({persistent});
+  await expect.poll(()=>settings.evaluate(()=>(globalThis as unknown as {credentialReleases:unknown[]}).credentialReleases.length)).toBeGreaterThan(0);
+  await expect(settings.getByText(/配置与域名授权已保存/)).toBeVisible();
+  await settings.evaluate(()=>{const state=globalThis as unknown as {holdCredentialRead:boolean;credentialReleases:(()=>void)[]};state.holdCredentialRead=false;state.credentialReleases.splice(0).forEach(release=>release());});
+  await expect(settings.getByText(persistent?'此端点已有长期凭据，密钥不会回显。':'此端点已有会话凭据，密钥不会回显。',{exact:false})).toBeVisible();
+  await expect(settings.getByText(/配置与域名授权已保存/)).toBeVisible();
+  await expect(settings.getByLabel('AI API Key',{exact:true})).toHaveValue('');expect(calls).toHaveLength(0);
+  await settings.reload();await expect(settings.getByLabel('AI 模型名称',{exact:true})).toHaveValue('mock-model');
+  await expect(settings.getByLabel('AI 接口地址',{exact:true})).toHaveValue(endpoint);await expect(settings.getByRole('switch',{name:'AI 分析总开关'})).toHaveAttribute('aria-checked','false');
+  await expect(settings.getByText(persistent?'此端点已有长期凭据，密钥不会回显。':'此端点已有会话凭据，密钥不会回显。',{exact:false})).toBeVisible();
+  await settings.getByRole('button',{name:'清除密钥并撤销授权'}).click();await expect(settings.getByText(/密钥已清除，当前服务商域名授权已撤销/)).toBeVisible();
+  await expect(settings.getByText(/此端点已有.*凭据/)).toHaveCount(0);expect(calls).toHaveLength(0);
+});
 
 test('IC-012：DeepSeek 官方表单与非思考 JSON 报告，完全拦截为 Mock 不访问服务商', async()=>{
   await settings.evaluate(()=>{
@@ -85,7 +110,7 @@ test('IC-012：DeepSeek 官方表单与非思考 JSON 报告，完全拦截为 M
   await expect(settings.getByLabel('AI 接口地址',{exact:true})).toHaveValue('https://api.deepseek.com/chat/completions');
   await expect(settings.getByLabel('AI 输出参数',{exact:true})).toHaveValue('max_tokens');
   for(const [label,value] of [['AI 模型名称','deepseek-flash'],['AI API Key',key],['AI 请求超时','120000'],['AI 最大输出','4096'],['AI 每日预算','0.1'],['AI 输入单价','0.3'],['AI 输出单价','1.2']])await settings.getByLabel(label,{exact:true}).fill(value);
-  await settings.getByRole('checkbox',{name:/我授权向上方指定端点/}).check();await settings.getByRole('button',{name:'保存配置并授权域名'}).click();await expect(settings.getByText(/配置与域名授权已保存|此端点已有会话凭据，密钥不会回显/)).toBeVisible();await expect(settings.getByLabel('AI API Key',{exact:true})).toHaveValue('');expect(calls).toHaveLength(0);
+  await settings.getByRole('checkbox',{name:/我授权向上方指定端点/}).check();await settings.getByRole('button',{name:'保存配置并授权域名'}).click();await expect(settings.getByText(/保存成功：配置与域名授权已保存/)).toBeVisible();await expect(settings.getByLabel('AI API Key',{exact:true})).toHaveValue('');expect(calls).toHaveLength(0);
   await enable();await preview();expect(calls).toHaveLength(0);await confirm();await waitReport();
   expect(calls).toHaveLength(1);expect(calls[0].body).toMatchObject({model:'deepseek-flash',thinking:{type:'disabled'},max_tokens:4096,response_format:{type:'json_object'}});
   expect(calls[0].body.tools).toBeUndefined();await page.reload();await waitReport();expect(calls).toHaveLength(1);
@@ -226,7 +251,7 @@ test('AI 报告随完整 ZIP 恢复，配置与凭据排除，预算记录不被
 test('长期密钥单独确认风险，重启浏览器保留报告和预算；会话密钥重启清除', async () => {
   await configure({ persistent: true }); await enable(); await preview(); await confirm(); await waitReport(); let profile = harness.profile; await harness.context.close(); harness = await collectionHarness(profile); await instrument(); settings = await harness.context.newPage(); await settings.goto(`chrome-extension://${harness.extensionId}/settings.html`); page = await harness.context.newPage(); await page.goto(`chrome-extension://${harness.extensionId}/analysis.html?noteId=n-00005`); await waitReport();
   expect(await settings.evaluate(async () => !!(await chrome.storage.local.get('ideaclip-ai-credential'))['ideaclip-ai-credential'])).toBe(true); expect(calls).toHaveLength(1);
-  await settings.getByRole('checkbox', { name: /长期本地保存密钥（默认关闭）/ }).uncheck(); await settings.getByRole('checkbox', { name: /我授权向上方指定端点/ }).check(); await settings.getByRole('button', { name: '保存配置并授权域名' }).click(); await expect(settings.getByText(/配置与域名授权已保存|此端点已有会话凭据/)).toBeVisible();
+  await settings.getByRole('checkbox', { name: /长期本地保存密钥（默认关闭）/ }).uncheck(); await settings.getByRole('checkbox', { name: /我授权向上方指定端点/ }).check(); await settings.getByRole('button', { name: '保存配置并授权域名' }).click(); await expect(settings.getByText(/保存成功：配置与域名授权已保存/)).toBeVisible();
   profile = harness.profile; await harness.context.close(); harness = await collectionHarness(profile); await instrument(); settings = await harness.context.newPage(); await settings.goto(`chrome-extension://${harness.extensionId}/settings.html`); page = await harness.context.newPage(); await page.goto(`chrome-extension://${harness.extensionId}/analysis.html?noteId=n-00005`); await page.getByRole('button', { name: '重新分析：预览发送内容' }).click(); await expect(page.getByRole('alert')).toContainText('没有可用 API Key'); expect(calls).toHaveLength(1);
 });
 
