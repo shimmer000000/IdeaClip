@@ -4,7 +4,8 @@ import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { readFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { collectionHarness } from './collection-harness';
+import { collectionHarness, clickAction } from './collection-harness';
+import { paragraph } from '../fixtures/pages';
 import { seedLibrary } from './library-fixture';
 import { mockCompletion, mockReport } from '../ai-fixture';
 import { readZip } from '../../src/backup/zip';
@@ -18,6 +19,11 @@ const consoleMessages: string[] = []; const unexpected: string[] = [];
 test.beforeAll(async () => {
   stolenServer = createServer((_request, response) => { stolen++; response.end('must not be reached'); }); await new Promise<void>(resolve => stolenServer.listen(0, '127.0.0.1', resolve)); stolenEndpoint = `http://127.0.0.1:${(stolenServer.address() as { port: number }).port}/stolen`;
   server = createServer((request, response) => {
+    if (request.method === 'GET') {
+      if (request.url === '/ic-012-article') { response.setHeader('Content-Type', 'text/html; charset=utf-8'); response.end(`<!doctype html><html lang="zh-CN"><title>IC-012 合成产品观察</title><meta name="author" content="本地验收作者"><main><article><h1>本地产品验证文章</h1><p>${paragraph.repeat(5)}</p><p>${paragraph.repeat(3)}</p></article></main></html>`); }
+      else response.writeHead(204).end();
+      return;
+    }
     response.setHeader('Access-Control-Allow-Origin', '*'); response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type'); response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS'); response.setHeader('Access-Control-Allow-Private-Network', 'true');
     if (request.method === 'OPTIONS') { response.writeHead(204).end(); return; }
     let body = ''; request.on('data', chunk => { body += chunk; }); request.on('end', () => {
@@ -63,6 +69,31 @@ async function preview(target = page) { await target.getByRole('button', { name:
 async function confirm(target = page, images = false) { const dialog = target.getByRole('dialog', { name: '本次 AI 分析确认' }); await dialog.getByRole('checkbox', { name: /我确认发送上述资料/ }).check(); if (images) await dialog.getByRole('checkbox', { name: /我明确同意上传/ }).check(); await dialog.getByRole('button', { name: '确认并发起本次分析' }).click(); }
 async function waitReport(target = page) { await expect(target.getByRole('heading', { name: '商业分析报告', exact: true })).toBeVisible(); await expect(target.locator('.ai-report section')).toHaveCount(15); }
 async function downloadBackup(info: TestInfo) { const received = settings.waitForEvent('download'); await settings.getByRole('button', { name: '立即备份', exact: true }).click(); const file = await received; const path = info.outputPath('AI-Report-Backup.zip'); await mkdir(dirname(path), { recursive: true }); await file.saveAs(path); return path; }
+
+test('IC-012：网页截图采集保存→Mock 分析→对比→孵化任务指令→完整备份恢复',async({},info)=>{
+  const base=`chrome-extension://${harness.extensionId}/`;
+  const source=await harness.context.newPage();await source.goto(new URL('/ic-012-article',endpoint).href);
+  const before=harness.context.pages();await clickAction(source,harness.cdp,harness.extensionId,'收藏当前网页');
+  await expect.poll(()=>harness.context.pages().find(p=>!before.includes(p)&&p.url().includes('/note.html'))).toBeTruthy();
+  const editor=harness.context.pages().find(p=>!before.includes(p)&&p.url().includes('/note.html'))!;
+  await editor.getByRole('button',{name:'截取可见页面',exact:true}).click();await expect(editor.getByRole('img')).toHaveCount(1);
+  await editor.getByRole('button',{name:'选择区域截图',exact:true}).click();await expect(source.locator('#ideaclip-region-selector')).toBeAttached();
+  await source.mouse.move(40,140);await source.mouse.down();await source.mouse.move(600,400,{steps:5});await source.mouse.up();await expect(editor.getByRole('img')).toHaveCount(2);
+  await editor.getByRole('button',{name:'提取正文',exact:true}).click();await expect(editor.getByLabel('本次采集预览')).toHaveValue(/产品设计/);await editor.getByRole('button',{name:'采用采集内容',exact:true}).click();
+  await editor.getByLabel('我的感悟',{exact:true}).fill('IC-012 合成感悟：先访谈需求，再考虑商业投入。');await editor.getByLabel('灵感标题',{exact:true}).fill('IC-012 连续流程灵感');await editor.getByRole('button',{name:'保存灵感',exact:true}).click();await expect(editor.getByRole('status')).toContainText('全部内容已关联');
+  const noteId=new URL(editor.url()).searchParams.get('id')!;await editor.reload();await expect(editor.getByRole('img')).toHaveCount(2);await expect(editor.getByLabel('我的感悟',{exact:true})).toHaveValue(/合成感悟/);expect(calls).toHaveLength(0);
+  await configure();await enable();await page.goto(base+`analysis.html?noteId=${encodeURIComponent(noteId)}`);await preview();expect(calls).toHaveLength(0);await confirm();await waitReport();
+  const reportDownload=page.waitForEvent('download');await page.getByRole('button',{name:'导出 Markdown',exact:true}).click();const markdownPath=info.outputPath('ic-012-business-report.md');await(await reportDownload).saveAs(markdownPath);expect(await readFile(markdownPath,'utf8')).toContain('90 天发展计划');await page.reload();await waitReport();
+  await page.goto(base+`analysis.html?compare=${encodeURIComponent(noteId)}&compare=n-00005`);await page.getByRole('button',{name:'预览对比资料与费用'}).click();expect(calls).toHaveLength(1);await confirm();await expect(page.getByRole('heading',{name:'横向对比报告',exact:true})).toBeVisible();
+  await page.getByRole('link',{name:'从对比报告创建项目',exact:true}).click();await page.getByRole('button',{name:'创建孵化项目',exact:true}).click();await page.getByLabel('项目名称',{exact:true}).fill('IC-012 全流程孵化项目');await page.getByRole('button',{name:'保存项目',exact:true}).click();
+  await page.getByRole('button',{name:'生成项目计划：预览与费用',exact:true}).click();expect(calls).toHaveLength(2);await confirm();await expect(page.getByRole('status')).toContainText('已保存待审核方案');await page.getByRole('button',{name:'重新读取（放弃未保存修改）',exact:true}).click();
+  const plan=page.locator('.project-plan');await plan.getByRole('checkbox').first().check();await plan.getByRole('checkbox').last().check();await plan.getByRole('button',{name:'确认导入审核任务',exact:true}).click();await expect(page.getByRole('status')).toContainText('已导入 1 条任务');
+  await page.bringToFront();await page.getByRole('button',{name:'复制 Codex 指令',exact:true}).click();await expect(page.getByRole('status')).toContainText('已复制中文 Codex 指令');expect(calls).toHaveLength(3);
+  const zip=await downloadBackup(info);const entries=await readZip(new Blob([await readFile(zip)]));const images=entries.filter(e=>e.name.startsWith('images/'));expect(images.length).toBeGreaterThanOrEqual(2);
+  await settings.getByLabel('选择 IdeaClip 备份文件').setInputFiles(zip);await expect(settings.getByRole('heading',{name:'恢复预览'})).toBeVisible();await settings.getByLabel('恢复方式').selectOption('replace');await settings.getByRole('button',{name:'开始恢复',exact:true}).click();const confirmation=settings.getByRole('dialog',{name:'完整替换二次确认'});await confirmation.getByRole('checkbox').check();await confirmation.getByRole('button',{name:'确认替换全部数据'}).click();await expect(settings.getByText('恢复完成，已通知打开的灵感库刷新。')).toBeVisible();
+  await editor.reload();await expect(editor.getByRole('img')).toHaveCount(2);await expect(editor.getByLabel('采集正文',{exact:true})).toHaveValue(/产品设计/);await page.reload();await page.getByRole('button',{name:/IC-012 全流程孵化项目 ·/}).click();await expect(page.getByText('完成 0 / 1，进度 0%',{exact:true})).toBeVisible();await expect(page.locator('.project-plan')).toContainText('主要风险与停止条件');expect(calls).toHaveLength(3);
+  const errors=consoleMessages.filter(message=>/Uncaught|TypeError|ReferenceError|NotFoundError|ErrorBoundary/i.test(message));expect(errors).toEqual([]);await info.attach('ic-012-flow-result',{body:JSON.stringify({mockRequests:calls.length,screenshotsInNote:2,backupImages:images.length,runtimeErrors:errors.length,realPaidRequests:0}),contentType:'application/json'});
+});
 
 test('IC-011：手动项目、阶段历史、任务看板与列表、审核后复制 Codex 指令', async ({},info)=>{
   await page.goto(`chrome-extension://${harness.extensionId}/notes.html?projects`);
