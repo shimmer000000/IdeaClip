@@ -52,8 +52,10 @@ async function popupEvaluate<T>(targetId: string, expression: string): Promise<T
     };
     cdp.on('Target.receivedMessageFromTarget', listener);
   });
-  await cdp.send('Target.sendMessageToTarget', { sessionId, message: JSON.stringify({ id, method: 'Runtime.evaluate', params: { expression, returnByValue: true, awaitPromise: true } }) });
-  try { return await response; }
+  try {
+    await cdp.send('Target.sendMessageToTarget', { sessionId, message: JSON.stringify({ id, method: 'Runtime.evaluate', params: { expression, returnByValue: true, awaitPromise: true } }) });
+    return await response;
+  }
   finally { clearTimeout(timer!); cdp.off('Target.receivedMessageFromTarget', listener!); await cdp.send('Target.detachFromTarget', { sessionId }).catch(() => {}); }
 }
 
@@ -65,7 +67,7 @@ async function popup() {
   await cdp.send('Extensions.triggerAction' as never, { id: extensionId, targetId: targetInfo.targetId } as never);
   let popupId = '';
   await expect.poll(async () => {
-    popupId = (await cdp.send('Target.getTargets')).targetInfos.find(target => target.url.includes('/popup.html') || target.type === 'other' && !target.url)?.targetId ?? '';
+    popupId = (await cdp.send('Target.getTargets')).targetInfos.find(target => target.url.split(/[?#]/)[0] === `chrome-extension://${extensionId}/popup.html`)?.targetId ?? '';
     return popupId;
   }).toBeTruthy();
   await expect.poll(() => popupEvaluate<boolean>(popupId, '!!document.querySelector("button")')).toBe(true);

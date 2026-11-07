@@ -1,5 +1,7 @@
 # IC-016C：Brave网络诊断、研究代理错误及DeepSeek准备
 
+后续自有SSH出口：为保留已有网站/数据库，服务器不安装Node或升级系统，Windows继续运行Node24。新增专用forced-command及显式SSH解析器/IPv4选择，真实免费固定IP及原站TLS通过；不代表原PopCat已获审计通过，也未修复系统DNS或调用付费搜索。完整证据与限制见 [SSH出口验收](SSH-EGRESS-VALIDATION.md)。
+
 ## 后续：可选受信任CONNECT出站
 
 基于本次交付后的新授权，现已增加默认关闭、需用户审查并主动启用的本机HTTP CONNECT模式。此前“本轮不新增出站代理”是下方历史验收范围，当前补充实现、信任边界和测试见 [出站代理验收](OUTBOUND-PROXY-VALIDATION.md)。只读识别到系统本机HTTP代理后，用户仅批准一次免费CONNECT/TLS诊断；已通过数字IP隧道及原始Brave域名的有效证书握手，无搜索HTTP、Key或词，未批准任何真实付费搜索/AI。没有自动启用系统代理、改DNS或重试首次失败搜索。

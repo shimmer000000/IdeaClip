@@ -21,7 +21,12 @@ function Get-IdeaClipOutbound($Value) {
     if ($Value.mode -ne 'connect' -or $Value.approved -ne $true -or $Value.auth -ne 'none' -or $Value.certificatePolicy -ne 'node-default' -or $Value.endpoint -notmatch '^http://(127\.0\.0\.1|\[::1\]):([1-9][0-9]{0,4})/?$') { throw '出站代理仅支持明确批准的本机HTTP CONNECT，无代理认证，保留原站Node默认可信库验证。' }
     $uri = [Uri]$Value.endpoint
     if ($uri.Port -lt 1 -or $uri.Port -gt 65535) { throw '出站代理端口无效。' }
-    return @{ mode = 'connect'; endpoint = $Value.endpoint; auth = 'none'; certificatePolicy = 'node-default'; approved = $true }
+    $result = @{ mode = 'connect'; endpoint = $Value.endpoint; auth = 'none'; certificatePolicy = 'node-default'; approved = $true }
+    $family = ([pscustomobject]$Value).PSObject.Properties['addressFamily']
+    if ($family) { if ($family.Value -ne 'ipv4') { throw '出口地址族无效。' }; $result.addressFamily = 'ipv4' }
+    $resolver = ([pscustomobject]$Value).PSObject.Properties['resolver']
+    if ($resolver) { if ($resolver.Value -ne 'ssh-gateway') { throw '出口解析器无效。' }; $result.resolver = 'ssh-gateway' }
+    return $result
 }
 function Test-IdeaClipConfig($Config) {
     if ($Config.token -notmatch '^[\x21-\x7e]{16,1000}$') { throw '代理访问密钥须为16至1000个可见ASCII字符。' }
@@ -126,10 +131,14 @@ Add-Label '出站网络模式（默认直连；不自动采用系统代理）'
 $networkMode = [Windows.Forms.ComboBox]::new(); $networkMode.Width = 590; $networkMode.DropDownStyle = 'DropDownList'; [void]$networkMode.Items.Add('直连'); [void]$networkMode.Items.Add('用户配置的受信任代理（HTTP CONNECT）'); $networkMode.SelectedIndex = 0; $layout.Controls.Add($networkMode)
 Add-Label '受信任本机代理端点（仅http://127.0.0.1:端口或[::1]；不支持远程/认证代理）'
 $networkEndpoint = Add-Input; $networkEndpoint.Enabled = $false
+$networkV4 = [Windows.Forms.CheckBox]::new(); $networkV4.Width = 590; $networkV4.Height = 45; $networkV4.Enabled = $false; $networkV4.Text = '此出口仅支持IPv4：校验全部DNS地址后固定选择IPv4；不重试、不改系统DNS。'; $layout.Controls.Add($networkV4)
+$networkDns = [Windows.Forms.CheckBox]::new(); $networkDns.Width = 590; $networkDns.Height = 45; $networkDns.Enabled = $false; $networkDns.Text = '使用已审计自有SSH出口解析DNS（仅此服务，不改系统DNS）；域名交给自有服务器。'; $layout.Controls.Add($networkDns)
 $networkAck = [Windows.Forms.CheckBox]::new(); $networkAck.Width = 590; $networkAck.Height = 65; $networkAck.Enabled = $false; $networkAck.Text = '我已审查并批准此端点：无需代理认证，按CONNECT数字IP转发，不通过SNI覆盖目标；原站证书仍由Node默认可信库验证，不放宽TLS。'; $layout.Controls.Add($networkAck)
-$networkMode.Add_SelectedIndexChanged({ $on = $networkMode.SelectedIndex -eq 1; $networkEndpoint.Enabled = $on; $networkAck.Enabled = $on; $networkAck.Checked = $false })
+$networkMode.Add_SelectedIndexChanged({ $on = $networkMode.SelectedIndex -eq 1; $networkEndpoint.Enabled = $on; $networkV4.Enabled = $on; $networkDns.Enabled = $on; $networkAck.Enabled = $on; $networkAck.Checked = $false })
 $networkEndpoint.Add_TextChanged({ $networkAck.Checked = $false })
-function Get-SelectedOutbound { if ($networkMode.SelectedIndex -eq 0) { return @{ mode = 'direct' } }; return Get-IdeaClipOutbound @{ mode = 'connect'; endpoint = $networkEndpoint.Text.Trim(); auth = 'none'; certificatePolicy = 'node-default'; approved = $networkAck.Checked } }
+$networkV4.Add_CheckedChanged({ $networkAck.Checked = $false })
+$networkDns.Add_CheckedChanged({ $networkAck.Checked = $false })
+function Get-SelectedOutbound { if ($networkMode.SelectedIndex -eq 0) { return @{ mode = 'direct' } }; $network = @{ mode = 'connect'; endpoint = $networkEndpoint.Text.Trim(); auth = 'none'; certificatePolicy = 'node-default'; approved = $networkAck.Checked }; if ($networkV4.Checked) { $network.addressFamily = 'ipv4' }; if ($networkDns.Checked) { $network.resolver = 'ssh-gateway' }; return Get-IdeaClipOutbound $network }
 $start = [Windows.Forms.Button]::new(); $start.Text = '启动本地研究服务'; $start.Width = 250; $layout.Controls.Add($start)
 $health = [Windows.Forms.Button]::new(); $health.Text = '检查本地代理（免费）'; $health.Width = 250; $health.Enabled = $false; $layout.Controls.Add($health)
 $stop = [Windows.Forms.Button]::new(); $stop.Text = '安全停止服务'; $stop.Width = 250; $stop.Enabled = $false; $layout.Controls.Add($stop)
@@ -156,16 +165,16 @@ $start.Add_Click({
         $script:config = @{ token = $token.Text; origins = @('chrome-extension://' + $extension.Text.Trim()); hosts = @($hosts.Text.ToLowerInvariant().Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }); braveKey = $brave.Text; outbound = (Get-SelectedOutbound) }
         $script:child = Start-IdeaClipService $script:config
         $start.Enabled = $false; $stop.Enabled = $true; $health.Enabled = $true
-        foreach ($b in @($extension,$hosts,$token,$brave,$networkMode,$networkEndpoint,$networkAck)) { $b.Enabled = $false }
+        foreach ($b in @($extension,$hosts,$token,$brave,$networkMode,$networkEndpoint,$networkV4,$networkDns,$networkAck)) { $b.Enabled = $false }
         $status.Text = '服务已启动：http://127.0.0.1:8788/research。请在插件保存配置并授权。搜索账户尚未验证。'
     } catch { $script:config = $null; $status.Text = $_.Exception.Message }
 })
 $health.Add_Click({ try { $r = Get-IdeaClipHealth $script:config; $status.Text = '本地代理连接正常。' + $(if ($r.search.configured) { '已填写搜索Key，上游未验证。' } else { '缺少搜索配置；公开网页/GitHub仍可使用。' }) + $(if ($r.PSObject.Properties['diagnostics']) { ' 最近阶段：' + (($r.diagnostics | Select-Object -Last 3 | ForEach-Object { $_.stage + ':' + $_.code }) -join '；') } else { '' }) } catch { $status.Text = $_.Exception.Message } })
-$stop.Add_Click({ Stop-IdeaClipService $script:child; $script:child = $null; $script:config = $null; $brave.Clear(); $start.Enabled = $true; $stop.Enabled = $false; $health.Enabled = $false; foreach ($b in @($extension,$hosts,$token,$brave,$networkMode)) { $b.Enabled = $true }; $networkEndpoint.Enabled = $networkMode.SelectedIndex -eq 1; $networkAck.Enabled = $networkMode.SelectedIndex -eq 1; $networkAck.Checked = $false; $status.Text = '服务已安全停止。未终止其他程序；Brave Key已清除，出站代理下次需重新确认。' })
+$stop.Add_Click({ Stop-IdeaClipService $script:child; $script:child = $null; $script:config = $null; $brave.Clear(); $start.Enabled = $true; $stop.Enabled = $false; $health.Enabled = $false; foreach ($b in @($extension,$hosts,$token,$brave,$networkMode)) { $b.Enabled = $true }; $networkEndpoint.Enabled = $networkMode.SelectedIndex -eq 1; $networkV4.Enabled = $networkMode.SelectedIndex -eq 1; $networkDns.Enabled = $networkMode.SelectedIndex -eq 1; $networkAck.Enabled = $networkMode.SelectedIndex -eq 1; $networkAck.Checked = $false; $status.Text = '服务已安全停止。未终止其他程序；Brave Key已清除，出站代理下次需重新确认。' })
 $form.Add_FormClosing({ Stop-IdeaClipService $script:child; $script:child = $null; $script:config = $null; $token.Clear(); $brave.Clear(); try { if ($script:copied -and [Windows.Forms.Clipboard]::GetText() -eq $script:copied) { [Windows.Forms.Clipboard]::Clear() } } catch {}; $script:copied = ''; $clipTimer.Dispose() })
 if ($SmokeUI) {
     try {
-        if (-not $token.UseSystemPasswordChar -or -not $brave.UseSystemPasswordChar -or $health.Enabled -or $stop.Enabled -or $layout.Controls.Count -ne 23 -or $networkMode.SelectedIndex -ne 0 -or $networkAck.Checked -or $networkAck.Enabled) { throw 'UI construction validation failed' }
+        if (-not $token.UseSystemPasswordChar -or -not $brave.UseSystemPasswordChar -or $health.Enabled -or $stop.Enabled -or $layout.Controls.Count -ne 25 -or $networkMode.SelectedIndex -ne 0 -or $networkAck.Checked -or $networkAck.Enabled -or $networkV4.Checked -or $networkV4.Enabled -or $networkDns.Checked -or $networkDns.Enabled) { throw 'UI construction validation failed' }
         Write-Output 'WINDOWS_UI_CONSTRUCTION_OK'
     } finally { $token.Clear(); $brave.Clear(); $clipTimer.Dispose(); $form.Dispose() }
     return

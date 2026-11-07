@@ -22,6 +22,16 @@ IC-016 的三个公开来源已通过生产安全代理进入独立 Chrome 验�
 
 ## 参考实现与服务范围
 
+### 自有SSH出口（保留服务器既有网站及数据库）
+
+Windows运行原Node24代理，连接自有本机`127.0.0.1:23334`网关。网关使用系统OpenSSH、专用密钥及固定主机指纹连接用户自有服务器；远端Python3.6+标准库forced-command只处理公共域名解析与公共数字IP:443字节转发，不能执行Shell、SFTP、SSH原生端口转发或访问私网目标。不终止TLS、不解析SNI/HTTP、不收取Brave Key或代理Token明文；没有新增远端监听端口。原站TLS由Windows Node24验证。
+
+`windows/Start-SSH-Egress.cmd`提供独立启停窗口，配置位于被忽略的`private/ssh/research-egress.json`，包含服务器公网IP/SSH端口/专用账户、私钥路径、known_hosts路径及系统ssh程序路径，不含API Key。私钥须仅当前用户可读，SSH指纹变化拒绝，不自动接受新指纹、密码认证或未知代理配置。不得上传这份配置、私钥或服务器管理凭据。
+
+此网关可对应原connect配置，并显式增加`addressFamily:"ipv4"`和`resolver:"ssh-gateway"`。二者均默认不启用，改变清除审查确认。解析器通过同一受信任SSH连接查询服务端现有DNS，只为本研究进程返回公共IP；不是修改Windows DNS，也不是失败后自动切换。每次DNS全部回答仍通过本机`lookupPublic`检查；任何私网回答整体拒绝。选定IPv4后只连接这一地址，不换IP、不跟随重定向。缺少IPv4明确报`DNS_ADDRESS_FAMILY_UNAVAILABLE`。使用其他不提供`/resolve`的CONNECT代理时不能勾选SSH解析器。
+
+服务器旧系统的维护风险仍存在，不能把端到端TLS当作主机安全审计；优先维护受支持系统，但本轮不为运行Node而升级glibc、内核或重装已有业务机器。详细部署限制、回滚及本次实际证据见 [SSH出口验收](SSH-EGRESS-VALIDATION.md)。
+
 ### 可选的受信任本机 HTTP CONNECT 出站
 
 默认仍为直连；不跟随Windows系统代理、PAC或HTTP_PROXY自动启用。Windows窗口新增“出站网络模式”：选择受信任代理、显式填写本机端点并勾选审查确认后，才可用于启动服务或免费诊断。改地址/模式或安全停止后须重新确认；每次打开窗口默认直连。

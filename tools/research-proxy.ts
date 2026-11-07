@@ -1,7 +1,7 @@
 // Optional self-hosted reference proxy. Never started by the extension/build/tests.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { request, Agent } from 'node:https';
-import { validateOutbound, targetTls, type Outbound } from './research-outbound.ts';
+import { validateOutbound, targetTls, gatewayAddresses, type Outbound } from './research-outbound.ts';
 import { NetworkFailure, lookupPublic, connectionFailure, failure, safeEvent, diagnoseBrave, type Stage, type Event } from './research-diagnostics.ts';
 import { BlockList, isIP } from 'node:net';
 import { timingSafeEqual } from 'node:crypto';
@@ -46,7 +46,8 @@ async function tunnelGet(url:URL,addresses:Address[],headers:Record<string,strin
 export async function secureGet(url:URL,headers:Record<string,string>,signal:AbortSignal,options:{lookup?:(host:string)=>Promise<Address[]>;connect?:Connector;observe?:(event:Event)=>void;outbound?:Outbound}={}):Promise<SafeResponse>{
  if(url.protocol!=='https:'||url.username||url.password||url.port&&url.port!=='443'||isIP(url.hostname)||!url.hostname.includes('.')||url.hostname.endsWith('.'))throw new Error('unsafe-endpoint');
  const outbound=validateOutbound(options.outbound);
- const addresses=await lookupPublic(url.hostname,signal,publicAddress,options.lookup);
+ const resolver=options.lookup??(outbound.mode==='connect'&&outbound.resolver==='ssh-gateway'?(h:string)=>gatewayAddresses(h,signal,outbound):undefined);
+ const addresses=await lookupPublic(url.hostname,signal,publicAddress,resolver);
  options.observe?.({stage:'dns',code:'OK',elapsedMs:0});options.observe?.({stage:'safety',code:'OK',elapsedMs:0});
  const response=outbound.mode==='connect'?await tunnelGet(url,addresses,headers,signal,outbound,options.observe):await(options.connect??connect)(url,addresses,headers,signal,options.observe);signal.throwIfAborted();
  if(response.status>=300&&response.status<400)throw new Error('redirect');return response;

@@ -36,14 +36,15 @@ export async function tlsProbe(address:Address,signal:AbortSignal,onStage:(stage
     socket.once('close',()=>signal.removeEventListener('abort',abort));
   });
 }
-export interface DiagnosticReport {version:1;free:true;searchAuthentication:'untested';searchQuota:'unverified';stages:Event[];environment:{node:string;httpProxyPresent:boolean;httpsProxyPresent:boolean;nodeEnvProxy:boolean;transport:'direct-pinned-https'|'http-connect-pinned-ip'}}
+export interface DiagnosticReport {version:1;free:true;searchAuthentication:'untested';searchQuota:'unverified';stages:Event[];environment:{node:string;httpProxyPresent:boolean;httpsProxyPresent:boolean;nodeEnvProxy:boolean;transport:'direct-pinned-https'|'http-connect-pinned-ip';dnsResolver?:'system'|'ssh-gateway'}}
 export async function diagnoseBrave(mode:'dns'|'tls'|'environment',allowed:(address:string)=>boolean,signal:AbortSignal,overrides:{resolve?:(host:string)=>Promise<Address[]>;probe?:typeof tlsProbe;outbound?:import('./research-outbound.ts').Outbound}={}):Promise<DiagnosticReport>{
-  const {validateOutbound,targetTls}=await import('./research-outbound.ts');const outbound=validateOutbound(overrides.outbound);
-  const report:DiagnosticReport={version:1,free:true,searchAuthentication:'untested',searchQuota:'unverified',stages:[],environment:{node:process.versions.node,httpProxyPresent:!!process.env.HTTP_PROXY||!!process.env.http_proxy,httpsProxyPresent:!!process.env.HTTPS_PROXY||!!process.env.https_proxy,nodeEnvProxy:process.env.NODE_USE_ENV_PROXY==='1',transport:outbound.mode==='connect'?'http-connect-pinned-ip':'direct-pinned-https'}};
+  const {validateOutbound,targetTls,gatewayAddresses}=await import('./research-outbound.ts');const outbound=validateOutbound(overrides.outbound);
+  const report:DiagnosticReport={version:1,free:true,searchAuthentication:'untested',searchQuota:'unverified',stages:[],environment:{node:process.versions.node,httpProxyPresent:!!process.env.HTTP_PROXY||!!process.env.http_proxy,httpsProxyPresent:!!process.env.HTTPS_PROXY||!!process.env.https_proxy,nodeEnvProxy:process.env.NODE_USE_ENV_PROXY==='1',transport:outbound.mode==='connect'?'http-connect-pinned-ip':'direct-pinned-https',dnsResolver:outbound.mode==='connect'&&outbound.resolver==='ssh-gateway'?'ssh-gateway':'system'}};
   if(mode==='environment'){report.stages.push({stage:'environment',code:'OK',elapsedMs:0});return report;}
   const start=Date.now();let stage:Stage='dns';
   try{
-    const addresses=await lookupPublic(BRAVE_HOST,signal,allowed,overrides.resolve);
+    const resolver=overrides.resolve??(outbound.mode==='connect'&&outbound.resolver==='ssh-gateway'?(h:string)=>gatewayAddresses(h,signal,outbound):undefined);
+    const addresses=await lookupPublic(BRAVE_HOST,signal,allowed,resolver);
     report.stages.push({stage:'dns',code:'OK',elapsedMs:Date.now()-start},{stage:'safety',code:'OK',elapsedMs:Date.now()-start});
     if(mode==='tls'){
       if(outbound.mode==='connect'){const socket=await targetTls(BRAVE_HOST,addresses,signal,outbound,allowed,e=>report.stages.push(e));socket.destroy();return report;}

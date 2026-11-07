@@ -14,7 +14,7 @@ import { parseDiagnosticReport } from './diagnostics';
 
 const servers:Server[]=[];const sockets=new Set<Socket>();let fixtureDir='',certFile='',keyFile='',clientFile='';
 const controller=()=>new AbortController();
-const outbound=(port:number):Outbound=>({mode:'connect',endpoint:`http://127.0.0.1:${port}`,auth:'none',certificatePolicy:'node-default',approved:true});
+const outbound=(port:number):Extract<Outbound,{mode:'connect'}>=>({mode:'connect',endpoint:`http://127.0.0.1:${port}`,auth:'none',certificatePolicy:'node-default',approved:true});
 const url=new URL('https://api.search.brave.com/synthetic-public');
 const lookup=()=>vi.fn(async()=>[{address:'8.8.8.8',family:4}]);
 async function listen(s:Server){servers.push(s);s.on('connection',socket=>{sockets.add(socket);socket.on('close',()=>sockets.delete(socket));});await new Promise<void>(r=>s.listen(0,'127.0.0.1',r));return (s.address() as {port:number}).port;}
@@ -58,8 +58,19 @@ it('全部DNS回答校验，混合私网/IPv6保留/IP家族错误在CONNECT之�
 it('IPv6 CONNECT只使用带方括号数字地址，不发送域名',async()=>{
  const p=await proxy();await expect(secureGet(url,{},controller().signal,{outbound:outbound(p.port),lookup:async()=>[{address:'2606:4700:4700::1111',family:6}]})).rejects.toMatchObject({code:'CONNECT_REJECTED'});expect(p.requests[0].authority).toBe('[2606:4700:4700::1111]:443');
 });
+it('显式IPv4出口在全部DNS校验后选地址；不自动回退，缺失或混合私网均拒绝',async()=>{
+ const p=await proxy();const selected={...outbound(p.port),addressFamily:'ipv4' as const};
+ await expect(secureGet(url,{},controller().signal,{outbound:selected,lookup:async()=>[{address:'2606:4700:4700::1111',family:6},{address:'8.8.8.8',family:4}]})).rejects.toMatchObject({code:'CONNECT_REJECTED'});expect(p.requests[0].authority).toBe('8.8.8.8:443');
+ await expect(secureGet(url,{},controller().signal,{outbound:selected,lookup:async()=>[{address:'2606:4700:4700::1111',family:6}]})).rejects.toMatchObject({code:'DNS_ADDRESS_FAMILY_UNAVAILABLE',stage:'dns'});
+ await expect(secureGet(url,{},controller().signal,{outbound:selected,lookup:async()=>[{address:'::1',family:6},{address:'8.8.8.8',family:4}]})).rejects.toMatchObject({code:'DNS_ADDRESS_BLOCKED'});expect(p.requests).toHaveLength(1);
+ expect(()=>validateOutbound({...selected,addressFamily:'auto-retry'})).toThrow();
+});
 it('预先取消时不解析DNS也不连接代理',async()=>{
  const p=await proxy(),c=controller(),resolve=lookup();c.abort();await expect(secureGet(url,{},c.signal,{outbound:outbound(p.port),lookup:resolve})).rejects.toThrow();expect(resolve).not.toHaveBeenCalled();expect(p.requests).toHaveLength(0);
+});
+it('SSH解析的全部回答仍经过原SSRF门禁，不因选择IPv4忽略私网IPv6',async()=>{
+ const s=createServer((req,res)=>{expect(req.url).toBe('/resolve');res.setHeader('Content-Type','application/json');res.end('{"addresses":[{"address":"8.8.8.8","family":4},{"address":"::1","family":6}]}');});const port=await listen(s);
+ await expect(secureGet(url,{},controller().signal,{outbound:{...outbound(port),resolver:'ssh-gateway',addressFamily:'ipv4'}})).rejects.toMatchObject({code:'DNS_ADDRESS_BLOCKED'});
 });
 async function tlsFixture(redirect=false){
  const received:{host:string|undefined;key:string|undefined}[]=[];const authorities:string[]=[];

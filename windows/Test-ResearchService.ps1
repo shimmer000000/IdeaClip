@@ -11,6 +11,10 @@ try { [void](Get-IdeaClipOutbound @{ mode = 'connect'; endpoint = 'http://127.0.
 Assert-Service $outboundRejected 'Unapproved outbound accepted'
 $outbound = Get-IdeaClipOutbound @{ mode = 'connect'; endpoint = 'http://127.0.0.1:23333'; auth = 'none'; certificatePolicy = 'node-default'; approved = $true }
 Assert-Service ($outbound.mode -eq 'connect') 'Explicit local outbound rejected'
+$outbound.addressFamily = 'ipv4'
+Assert-Service ((Get-IdeaClipOutbound $outbound).addressFamily -eq 'ipv4') 'Explicit IPv4 selection lost'
+$outbound.resolver = 'ssh-gateway'
+Assert-Service ((Get-IdeaClipOutbound $outbound).resolver -eq 'ssh-gateway') 'Explicit SSH resolver selection lost'
 $diagnostic = Get-IdeaClipNetworkDiagnostic 'environment'
 Assert-Service ($diagnostic.free -eq $true -and $diagnostic.searchAuthentication -eq 'untested' -and $diagnostic.searchQuota -eq 'unverified') 'Environment diagnostic not free'
 Assert-Service ($diagnostic.environment.transport -eq 'direct-pinned-https') 'Diagnostic transport changed'

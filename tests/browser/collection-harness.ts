@@ -47,7 +47,9 @@ export async function clickAction(source: Page, cdp: CDPSession, extensionId: st
   await cdp.send('Extensions.triggerAction' as never, { id: extensionId, targetId: target.targetId } as never);
   let popupId = '';
   await expect.poll(async () => {
-    popupId = (await cdp.send('Target.getTargets')).targetInfos.find(t => t.url.includes('/popup.html') || t.type === 'other' && !t.url)?.targetId ?? '';
+    // Empty "other" targets may belong to a previous action or another surface.
+    // Wait for this extension's actual popup before attaching to its runtime.
+    popupId = (await cdp.send('Target.getTargets')).targetInfos.find(t => t.url.split(/[?#]/)[0] === `chrome-extension://${extensionId}/popup.html`)?.targetId ?? '';
     return popupId;
   }).toBeTruthy();
   await expect.poll(() => popupEvaluate(cdp, popupId, `!!Array.from(document.querySelectorAll('button')).find(b=>b.textContent===${JSON.stringify(label)})`)).toBe(true);

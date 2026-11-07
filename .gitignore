@@ -12,6 +12,8 @@ playwright-report/
 *.local
 *.log
 *.tsbuildinfo
+__pycache__/
+*.pyc
 .idea/
 .vscode/
 .DS_Store

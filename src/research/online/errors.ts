@@ -1,4 +1,5 @@
 const MESSAGES = {
+  DNS_ADDRESS_FAMILY_UNAVAILABLE:'全部DNS地址已校验，但没有所选出口要求的IPv4地址；未连接、未切换地址族或重试。',
   search_not_configured: '缺少搜索服务配置：请在本地服务窗口填写 Brave Key；不会自动测试或搜索。',
   search_auth: '搜索服务拒绝凭据，请核对服务端配置；未自动重试。',
   search_quota: '搜索额度不足或请求频率受限，请核对服务商账户；未自动重试。',
@@ -32,7 +33,7 @@ const MESSAGES = {
 export type ResearchErrorCode = keyof typeof MESSAGES;
 const stages=['proxy','auth','search','dns','safety','tcp','tls','http','parse','client','environment','outbound','connect'] as const;
 export type FailureStage=typeof stages[number];
-const stageOf:Partial<Record<ResearchErrorCode,FailureStage>>={OUTBOUND_PROXY_UNREACHABLE:'outbound',CONNECT_REJECTED:'connect',CONNECT_PROTOCOL_INVALID:'connect',PROXY_UNREACHABLE:'proxy',PROXY_AUTH_FAILED:'auth',DNS_LOOKUP_FAILED:'dns',DNS_ADDRESS_BLOCKED:'safety',TCP_CONNECT_FAILED:'tcp',TLS_HANDSHAKE_FAILED:'tls',TLS_CERTIFICATE_FAILED:'tls',UPSTREAM_TIMEOUT:'http',CLIENT_TIMEOUT:'client',REQUEST_CANCELLED:'client',SEARCH_AUTH_FAILED:'http',SEARCH_QUOTA_EXCEEDED:'http',SEARCH_HTTP_ERROR:'http',SEARCH_RESPONSE_INVALID:'parse'};
+const stageOf:Partial<Record<ResearchErrorCode,FailureStage>>={DNS_ADDRESS_FAMILY_UNAVAILABLE:'dns',OUTBOUND_PROXY_UNREACHABLE:'outbound',CONNECT_REJECTED:'connect',CONNECT_PROTOCOL_INVALID:'connect',PROXY_UNREACHABLE:'proxy',PROXY_AUTH_FAILED:'auth',DNS_LOOKUP_FAILED:'dns',DNS_ADDRESS_BLOCKED:'safety',TCP_CONNECT_FAILED:'tcp',TLS_HANDSHAKE_FAILED:'tls',TLS_CERTIFICATE_FAILED:'tls',UPSTREAM_TIMEOUT:'http',CLIENT_TIMEOUT:'client',REQUEST_CANCELLED:'client',SEARCH_AUTH_FAILED:'http',SEARCH_QUOTA_EXCEEDED:'http',SEARCH_HTTP_ERROR:'http',SEARCH_RESPONSE_INVALID:'parse'};
 export class ResearchFailure extends Error {
   readonly stage:FailureStage;readonly mayHaveSent:boolean;readonly outcomeUnknown:boolean;
   constructor(readonly code:ResearchErrorCode,stage:FailureStage=stageOf[code]??'proxy') {
