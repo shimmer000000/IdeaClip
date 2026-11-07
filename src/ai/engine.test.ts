@@ -100,6 +100,19 @@ describe('网络、安全和预算', () => {
     expect(() => validateConfig({ ...config(), provider: 'openai' })).toThrow('固定官方'); expect(validateConfig({ ...config(), provider: 'deepseek', endpoint: PROVIDERS.deepseek, outputParameter: 'max_tokens' }).endpoint).toBe(PROVIDERS.deepseek);
     await setAIEnabled(true, database); await database.aiConfig.update('manual', { auth: 'none', outputParameter: 'max_tokens' }); const e = engine(); await e.instance.run((await e.instance.preview(noteId, [])).id); const call = e.fetcher.mock.calls[0] as unknown as [string, RequestInit]; expect((call[1].headers as Record<string, string>).Authorization).toBeUndefined(); expect(JSON.parse(call[1].body as string).max_tokens).toBe(4096);
   });
+  it.each(['deepseek', 'openai', 'custom'] as const)('%s 只发送对应服务商参数，DeepSeek 显式关闭默认思考模式', async provider => {
+    const fetcher = vi.fn(async () => Response.json(mockCompletion()));
+    const endpoint = provider === 'custom' ? config().endpoint : PROVIDERS[provider];
+    const selected = validateConfig({ ...config(), provider, endpoint, model: provider === 'deepseek' ? 'deepseek-flash' : 'mock', outputParameter: provider === 'openai' ? 'max_completion_tokens' : 'max_tokens' });
+    await chatTransport(fetcher as typeof fetch).complete(selected, key, [{ role: 'user', content: '只使用合成资料，输出 JSON' }], new AbortController().signal);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const call = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(call[1].body as string);
+    expect(body.thinking).toEqual(provider === 'deepseek' ? { type: 'disabled' } : undefined);
+    expect(body.response_format).toEqual({ type: 'json_object' });
+    expect(body[selected.outputParameter]).toBe(selected.maxOutput);
+    expect(call[1]).toMatchObject({ redirect: 'error', credentials: 'omit' });
+  });
   it('超过响应与输入大小上限拒绝，无额外请求', async () => {
     await setAIEnabled(true, database); const e = engine(vi.fn(async () => new Response('x'.repeat(1024 * 1024 + 1)))); await expect(e.instance.run((await e.instance.preview(noteId, [])).id)).rejects.toThrow('1 MiB'); await database.notes.update(noteId, { content: '中'.repeat(70000) }); await expect(e.instance.preview(noteId, [])).rejects.toThrow('未自动截断');
   });

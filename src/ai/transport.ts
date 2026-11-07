@@ -7,7 +7,7 @@ export function chatTransport(fetcher: typeof fetch = fetch): AITransport {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }; if (config.auth === 'bearer') headers.Authorization = `Bearer ${key}`;
     let response: Response;
     try {
-      response = await fetcher(config.endpoint, { method: 'POST', headers, body: JSON.stringify({ model: config.model, messages, response_format: { type: 'json_object' }, [config.outputParameter]: config.maxOutput, stream: false, ...(config.provider === 'openai' ? { store: false } : {}) }), signal, redirect: 'error', credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
+      response = await fetcher(config.endpoint, { method: 'POST', headers, body: JSON.stringify({ model: config.model, messages, response_format: { type: 'json_object' }, [config.outputParameter]: config.maxOutput, stream: false, ...(config.provider === 'openai' ? { store: false } : {}), ...(config.provider === 'deepseek' ? { thinking: { type: 'disabled' } } : {}) }), signal, redirect: 'error', credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
     } catch { throw new RequestFailure('network', '网络请求失败、被取消或遇到重定向；客户端不会自动重试。'); }
     if (!response.ok || response.redirected || response.type === 'opaqueredirect') { await response.body?.cancel().catch(() => {}); throw new RequestFailure('http', `服务商请求失败（HTTP ${response.status}），未读取错误正文，也未跟随重定向。`); }
     const reader = response.body?.getReader(); if (!reader) throw new RequestFailure('response', '服务商返回空响应。');

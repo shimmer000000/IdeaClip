@@ -55,7 +55,7 @@ async function instrument() {
 }
 test.beforeEach(async () => {
   calls.length = 0; stolen = 0; mode = 'success'; consoleMessages.length = 0; unexpected.length = 0; for (const response of held.splice(0)) response.destroy();
-  harness = await collectionHarness(); await instrument(); settings = await harness.context.newPage(); await settings.goto(`chrome-extension://${harness.extensionId}/settings.html`); await seedLibrary(settings); page = await harness.context.newPage(); await page.goto(`chrome-extension://${harness.extensionId}/analysis.html?noteId=n-00005`);
+  harness = await collectionHarness(); await instrument(); settings = await harness.context.newPage(); await settings.goto(`chrome-extension://${harness.extensionId}/settings.html`); await expect(settings.getByRole('switch', { name: 'AI 分析总开关' })).toBeEnabled(); await seedLibrary(settings); page = await harness.context.newPage(); await page.goto(`chrome-extension://${harness.extensionId}/analysis.html?noteId=n-00005`);
 });
 test.afterEach(async () => { expect(consoleMessages.join('\n')).not.toContain(key); expect(unexpected).toEqual([]); await harness?.context.close().catch(() => {}); });
 async function configure(options: { vision?: boolean; persistent?: boolean; budget?: string; timeout?: string } = {}) {
@@ -69,6 +69,27 @@ async function preview(target = page) { await target.getByRole('button', { name:
 async function confirm(target = page, images = false) { const dialog = target.getByRole('dialog', { name: '本次 AI 分析确认' }); await dialog.getByRole('checkbox', { name: /我确认发送上述资料/ }).check(); if (images) await dialog.getByRole('checkbox', { name: /我明确同意上传/ }).check(); await dialog.getByRole('button', { name: '确认并发起本次分析' }).click(); }
 async function waitReport(target = page) { await expect(target.getByRole('heading', { name: '商业分析报告', exact: true })).toBeVisible(); await expect(target.locator('.ai-report section')).toHaveCount(15); }
 async function downloadBackup(info: TestInfo) { const received = settings.waitForEvent('download'); await settings.getByRole('button', { name: '立即备份', exact: true }).click(); const file = await received; const path = info.outputPath('AI-Report-Backup.zip'); await mkdir(dirname(path), { recursive: true }); await file.saveAs(path); return path; }
+
+test('IC-012：DeepSeek 官方表单与非思考 JSON 报告，完全拦截为 Mock 不访问服务商', async()=>{
+  await settings.evaluate(()=>{
+    chrome.permissions.request=async details=>details.origins?.every(origin=>origin==='https://api.deepseek.com/*')===true;
+    chrome.permissions.contains=async details=>details.origins?.every(origin=>origin==='https://api.deepseek.com/*')===true;
+  });
+  await page.evaluate(()=>{chrome.permissions.contains=async details=>details.origins?.every(origin=>origin==='https://api.deepseek.com/*')===true;});
+  await harness.context.route('https://api.deepseek.com/chat/completions',async route=>{
+    calls.push({body:route.request().postDataJSON(),authorization:route.request().headers().authorization??'',path:'/chat/completions'});
+    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(mockCompletion())});
+  });
+  await settings.getByLabel('AI 服务商',{exact:true}).selectOption('deepseek');
+  await expect(settings.getByText(/DeepSeek 官方接口用于结构化报告时固定使用非思考模式/)).toBeVisible();
+  await expect(settings.getByLabel('AI 接口地址',{exact:true})).toHaveValue('https://api.deepseek.com/chat/completions');
+  await expect(settings.getByLabel('AI 输出参数',{exact:true})).toHaveValue('max_tokens');
+  for(const [label,value] of [['AI 模型名称','deepseek-flash'],['AI API Key',key],['AI 请求超时','120000'],['AI 最大输出','4096'],['AI 每日预算','0.1'],['AI 输入单价','0.3'],['AI 输出单价','1.2']])await settings.getByLabel(label,{exact:true}).fill(value);
+  await settings.getByRole('checkbox',{name:/我授权向上方指定端点/}).check();await settings.getByRole('button',{name:'保存配置并授权域名'}).click();await expect(settings.getByText(/配置与域名授权已保存|此端点已有会话凭据，密钥不会回显/)).toBeVisible();await expect(settings.getByLabel('AI API Key',{exact:true})).toHaveValue('');expect(calls).toHaveLength(0);
+  await enable();await preview();expect(calls).toHaveLength(0);await confirm();await waitReport();
+  expect(calls).toHaveLength(1);expect(calls[0].body).toMatchObject({model:'deepseek-flash',thinking:{type:'disabled'},max_tokens:4096,response_format:{type:'json_object'}});
+  expect(calls[0].body.tools).toBeUndefined();await page.reload();await waitReport();expect(calls).toHaveLength(1);
+});
 
 test('IC-012：网页截图采集保存→Mock 分析→对比→孵化任务指令→完整备份恢复',async({},info)=>{
   const base=`chrome-extension://${harness.extensionId}/`;
