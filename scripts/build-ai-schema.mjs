@@ -15,3 +15,9 @@ if (/require\(/.test(code)) throw new Error('Unexpected runtime dependency in ge
 // Native Unicode iteration counts code points without a CommonJS runtime helper.
 await writeFile('src/ai/generated/validate.js', '// Generated at build time with Ajv; no runtime eval.\nconst ucs2length = value => { let count = 0; for (const point of value) count++; return count; };\n' + code);
 await writeFile('public/licenses/ajv-LICENSE.txt', (await readFile('node_modules/ajv/LICENSE', 'utf8')).trimEnd() + '\n');
+
+const researchNames=['conclusion','businessModel','demand','competition','evidence','counter','investment','revenue','risks','unknowns','sevenDays','mvp'];
+const research={type:'object',additionalProperties:false,required:['schemaVersion','sections'],properties:{schemaVersion:{const:2},sections:{type:'object',additionalProperties:false,required:researchNames,properties:Object.fromEntries(researchNames.map(k=>[k,{type:'array',minItems:1,maxItems:8,items:{$ref:'#/$defs/claim'}}]))}},$defs:{claim:{type:'object',additionalProperties:false,required:['kind','text','sourceId','quote'],properties:{kind:{enum:['original','claim','inference','hypothesis']},text:{type:'string',minLength:1,maxLength:3000},sourceId:{type:['string','null'],maxLength:500},quote:{type:['string','null'],maxLength:1000}}}}};
+const researchCode=standalone(ajv,ajv.compile(research)).replaceAll('require("ajv/dist/runtime/ucs2length").default','ucs2length');
+if(/require\(/.test(researchCode))throw new Error('Unexpected research runtime dependency');
+await writeFile('src/ai/generated/research.js','// Generated at build time with Ajv; no runtime eval.\nconst ucs2length = value => [...value].length;\n'+researchCode);

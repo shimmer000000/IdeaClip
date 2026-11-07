@@ -1,3 +1,4 @@
+import { ResearchWizard } from './research/workflow/Wizard';
 import { ProjectCenter } from './incubation/ProjectCenter';
 import { ResearchCenter } from './research/ResearchCenter';
 import { ComparisonPage } from './comparison/ComparisonPage';
@@ -23,7 +24,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean
 }
 
 const page = window.location.pathname.split('/').pop();
-const App = page === 'notes.html' && new URLSearchParams(location.search).has('research') ? ResearchCenter : page === 'notes.html' && new URLSearchParams(location.search).has('projects') ? ProjectCenter : page === 'analysis.html' && new URLSearchParams(location.search).has('compare') ? ComparisonPage : page === 'tasks.html' ? TaskCenter : page === 'analysis.html' ? AnalysisPage : page === 'notes.html' ? Notes : page === 'settings.html' ? Settings : page === 'capture.html' ? CapturePreview : page === 'collection.html' ? CollectionPreview : page === 'note.html' ? NoteEditor : Popup;
+const App = page === 'notes.html' && new URLSearchParams(location.search).has('wizard') ? ResearchWizard : page === 'notes.html' && new URLSearchParams(location.search).has('research') ? ResearchCenter : page === 'notes.html' && new URLSearchParams(location.search).has('projects') ? ProjectCenter : page === 'analysis.html' && new URLSearchParams(location.search).has('compare') ? ComparisonPage : page === 'tasks.html' ? TaskCenter : page === 'analysis.html' ? AnalysisPage : page === 'notes.html' ? Notes : page === 'settings.html' ? Settings : page === 'capture.html' ? CapturePreview : page === 'collection.html' ? CollectionPreview : page === 'note.html' ? NoteEditor : Popup;
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode><ErrorBoundary><App /></ErrorBoundary></React.StrictMode>,

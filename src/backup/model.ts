@@ -1,3 +1,4 @@
+import { portableWorkflow } from '../research/workflow/model';
 import { portableOnline } from '../research/online/backup';
 import { FIELDS } from '../incubation/model';
 import { validatePlan } from '../research/model';
@@ -10,11 +11,11 @@ import { httpUrl } from '../collection/model';
 import { assessQuality, paragraphMap, type TextQuality } from '../collection/quality';
 import { markdown, validateReport, type Report } from '../ai/report';
 
-export const TABLES = ['notes', 'noteDrafts', 'screenshots', 'contentCaptures', 'settings', 'analyses', 'projects', 'aiTemplates', 'comparisonReports', 'researchPlans', 'researchSources', 'researchRuns', 'researchReports'] as const;
+export const TABLES = ['notes', 'noteDrafts', 'screenshots', 'contentCaptures', 'settings', 'analyses', 'projects', 'aiTemplates', 'comparisonReports', 'researchPlans', 'researchSources', 'researchRuns', 'researchReports', 'researchWorkflows'] as const;
 export type BackupTable = typeof TABLES[number];
 export type Row = Record<string, unknown> & { id: string };
 export interface Descriptor { name: string; size: number; sha256: string }
-export interface Manifest { format: 'IdeaClip'; formatVersion: 1 | 2 | 3 | 4 | 5; databaseVersion: number; createdAt: string; counts: Record<BackupTable, number>; entries: Descriptor[] }
+export interface Manifest { format: 'IdeaClip'; formatVersion: 1 | 2 | 3 | 4 | 5 | 6; databaseVersion: number; createdAt: string; counts: Record<BackupTable, number>; entries: Descriptor[] }
 export interface Summary { createdAt: string; counts: Record<BackupTable, number>; bytes: number }
 export const emptyCounts = () => Object.fromEntries(TABLES.map(table => [table, 0])) as Record<BackupTable, number>;
 export function object(value: unknown): Record<string, unknown> {
@@ -72,6 +73,7 @@ export function portableRow(table: BackupTable, value: unknown): Row {
   const r = object(value); const key = id(r.id);
   const dates = () => ({ createdAt: timestamp(r.createdAt), updatedAt: timestamp(r.updatedAt) });
   switch (table) {
+    case 'researchWorkflows': return portableWorkflow(r,redact) as unknown as Row;
     case 'researchSources': case 'researchRuns': case 'researchReports': return portableOnline(table,r,redact,url);
     case 'researchPlans': {
       const p=validatePlan(r);
@@ -130,7 +132,7 @@ export function portableRow(table: BackupTable, value: unknown): Row {
       const base={id:key,title:txt(r.title),noteIds:ids(r.noteIds),...dates()};
       if(r.revision===undefined)return base;
       const project={...base,...Object.fromEntries(Object.keys(FIELDS).map(k=>[k,txt(r[k])])),stage:r.stage,revision:r.revision,
-        refs:array(r.refs).map(x=>{const a=object(x);return {kind:a.kind,id:id(a.id),title:txt(a.title)};}),
+        ...(r.researchRisks!==undefined?{researchRisks:txt(r.researchRisks)}:{}),...(r.researchOrigin?{researchOrigin:{studyId:id(object(r.researchOrigin).studyId),reportId:id(object(r.researchOrigin).reportId),reportHash:text(object(r.researchOrigin).reportHash,64)}}:{}),refs:array(r.refs).map(x=>{const a=object(x);return {kind:a.kind,id:id(a.id),title:txt(a.title)};}),
         history:array(r.history).map(x=>{const a=object(x);return {id:id(a.id),from:a.from,to:a.to,at:timestamp(a.at)};}),
         tasks:array(r.tasks).map(x=>{const a=object(x);return {id:id(a.id),title:txt(a.title),priority:a.priority,status:a.status,due:text(a.due,10),notes:txt(a.notes),noteIds:ids(a.noteIds),milestone:txt(a.milestone),acceptance:txt(a.acceptance),reviewed:bool(a.reviewed),...(a.importKey?{importKey:id(a.importKey)}:{})};}),
         plans:array(r.plans).map(x=>{const a=object(x);const report=object(a.report);const sections=object(report.sections);const safeSections=Object.fromEntries(Object.entries(sections).map(([k,items])=>[k,array(items).map(x=>{const c=object(x);return {kind:c.kind,text:txt(c.text),evidence:c.evidence===null?null:txt(c.evidence)};})]));return {id:id(a.id),createdAt:timestamp(a.createdAt),model:txt(a.model),report:{schemaVersion:report.schemaVersion,sections:safeSections},imported:ids(a.imported),...(a.templateId!==undefined?{templateId:text(a.templateId,100),templateVersion:txt(a.templateVersion),projectRevision:number(a.projectRevision)}:{}),...(a.sources!==undefined?{sources:array(a.sources).map(x=>{const s=object(x);return {id:id(s.id),title:txt(s.title),revision:number(s.revision),hash:text(s.hash,64)};})}:{})};})};
@@ -153,12 +155,12 @@ export function references(table: BackupTable, row: Row): [BackupTable, string][
 }
 export function parseManifest(value: unknown): Manifest {
   const r = object(value);
-  if (r.format !== 'IdeaClip' || ![1, 2, 3, 4, 5].includes(r.formatVersion as number) || typeof r.databaseVersion !== 'number' || !Number.isInteger(r.databaseVersion) || r.databaseVersion < 1 || r.databaseVersion > 13) throw new Error('备份格式或数据库版本不兼容，请使用支持该版本的 IdeaClip。');
+  if (r.format !== 'IdeaClip' || ![1, 2, 3, 4, 5, 6].includes(r.formatVersion as number) || typeof r.databaseVersion !== 'number' || !Number.isInteger(r.databaseVersion) || r.databaseVersion < 1 || r.databaseVersion > 14) throw new Error('备份格式或数据库版本不兼容，请使用支持该版本的 IdeaClip。');
   const createdAt = text(r.createdAt, 100); if (!Number.isFinite(Date.parse(createdAt))) throw new Error('备份创建时间无效。');
   const counts = emptyCounts(); const source = object(r.counts); let total = 0;
-  for (const table of TABLES) { counts[table] = ['researchSources','researchRuns','researchReports'].includes(table) && Number(r.formatVersion)<=4 && r.databaseVersion<=12 && source[table]===undefined ? 0 : table === 'researchPlans' && Number(r.formatVersion) <= 3 && r.databaseVersion <= 11 && source[table] === undefined ? 0 : table === 'comparisonReports' && Number(r.formatVersion) <= 2 && r.databaseVersion <= 9 && source[table] === undefined ? 0 : table === 'aiTemplates' && r.formatVersion === 1 && r.databaseVersion <= 8 && source[table] === undefined ? 0 : number(source[table]); total += counts[table]; }
+  for (const table of TABLES) { counts[table] = table==='researchWorkflows'&&Number(r.formatVersion)<=5&&r.databaseVersion<=13&&source[table]===undefined?0:['researchSources','researchRuns','researchReports'].includes(table) && Number(r.formatVersion)<=4 && r.databaseVersion<=12 && source[table]===undefined ? 0 : table === 'researchPlans' && Number(r.formatVersion) <= 3 && r.databaseVersion <= 11 && source[table] === undefined ? 0 : table === 'comparisonReports' && Number(r.formatVersion) <= 2 && r.databaseVersion <= 9 && source[table] === undefined ? 0 : table === 'aiTemplates' && r.formatVersion === 1 && r.databaseVersion <= 8 && source[table] === undefined ? 0 : number(source[table]); total += counts[table]; }
   if (counts.aiTemplates > 105) throw new Error('备份模板数量超过安全上限。');
   if (total > 100000) throw new Error('备份记录超过 10 万条安全上限。');
   const entries = array(r.entries).map(value => { const e = object(value); const hash = text(e.sha256, 64); if (!/^[a-f0-9]{64}$/.test(hash)) throw new Error('备份校验和无效。'); return { name: text(e.name, 96), size: number(e.size), sha256: hash }; });
-  return { format: 'IdeaClip', formatVersion: r.formatVersion as 1 | 2 | 3 | 4 | 5, databaseVersion: r.databaseVersion, createdAt, counts, entries };
+  return { format: 'IdeaClip', formatVersion: r.formatVersion as 1 | 2 | 3 | 4 | 5 | 6, databaseVersion: r.databaseVersion, createdAt, counts, entries };
 }

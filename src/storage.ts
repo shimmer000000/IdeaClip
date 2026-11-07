@@ -41,6 +41,7 @@ export interface Screenshot {
 }
 
 export class IdeaClipDB extends Dexie {
+  researchWorkflows!: Table<import('./research/workflow/model').Workflow, string>;
   researchConfig!: Table<import('./research/online/model').ResearchConfig, string>;
   researchUsage!: Table<import('./research/online/model').ResearchUsage, string>;
   researchRuns!: Table<import('./research/online/model').ResearchRun, string>;
@@ -96,6 +97,7 @@ export class IdeaClipDB extends Dexie {
     this.version(11).stores({});
     this.version(12).stores({ researchPlans: 'id, updatedAt, createdAt' });
     this.version(13).stores({ researchConfig:'id',researchUsage:'id, day, runId',researchRuns:'id, studyId, state, createdAt, [studyId+createdAt]',researchSources:'id, studyId, runId, collectedAt, [studyId+collectedAt]',researchReports:'id, studyId, createdAt, [studyId+createdAt]' });
+    this.version(14).stores({researchWorkflows:'id, studyId, updatedAt'});
   }
 }
 export const db = new IdeaClipDB();
