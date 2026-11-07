@@ -47,6 +47,10 @@ const cases:[string,(r:Report)=>void,string][]=[
  ['original改写或翻译',r=>{r.sections.evidence[0].text='作者说每月收费。';},'research_original_mismatch'],
  ['未采集URL',r=>{r.sections.conclusion[0].text='https://uncollected.example/';},'research_url'],
 ];
+it('模型只选证据编号：引擎还原原文、保存及本地再次保存仅一次Mock请求',async()=>{
+ const {engine,fetchMock}=setup(undefined,async(_url,init)=>{const request=JSON.parse(String(init?.body));const input=JSON.parse(request.messages[1].content).untrustedResearch;const ref=input.evidence[0];const value=report();value.sections.evidence=[{kind:'original',text:ref.id,sourceId:ref.sourceId,quote:ref.id}];return Response.json({choices:[{message:{content:JSON.stringify(value)},finish_reason:'stop'}],usage:{prompt_tokens:100,completion_tokens:200}});});
+ const p=await engine.previewResearch('study',[source.id],'study');expect(p.systemPrompt).toContain('优先使用证据编号');const result=await engine.run(p.id);expect(result.saved).toBe(true);expect(result.analysis.research?.report.sections.evidence[0]).toMatchObject({text:source.content,quote:source.content});await engine.save(result.analysis);expect(fetchMock).toHaveBeenCalledTimes(1);expect(await database.researchReports.count()).toBe(1);
+});
 it.each(cases)('%s：固定安全码、保留usage和预留、不写报告且不自动重试',async(_label,mutate,code)=>{
  const value=report();mutate(value);const {engine,fetchMock}=setup(value);const p=await engine.previewResearch('study',[source.id],'study');
  await expect(engine.run(p.id)).rejects.toMatchObject({code});const usage=(await database.aiUsage.toArray())[0];expect(usage).toMatchObject({status:'failed',errorCode:code,reservedMicros:p.costMicros,inputTokens:1234,outputTokens:456,responseReceived:true});expect(usage.errorStage).toMatch(/schema|evidence/);expect(await database.researchReports.count()).toBe(0);expect(await database.researchSources.get(source.id)).toEqual(source);

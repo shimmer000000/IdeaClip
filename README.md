@@ -6,6 +6,8 @@
 
 ## 当前范围
 
+2026-11-08补充：针对真实界面的research_quote_mismatch，新增本次快照证据编号目录，模型可选编号，由程序取回原文后执行原有严格Schema与逐字校验；不模糊修正、不补造证据，不重试旧请求。旧报告/ZIP结构不变，证据目录计入新预览的资料范围、大小及费用估算。详见[引用可靠性验收](docs/RESEARCH-EVIDENCE-VALIDATION.md)。
+
 2026-11-08：用户新截图明确报告 `research_items`，至少一栏不是1～8条的数组；尚不能从旧响应确定具体栏目及数量。已加强空栏目提示与安全定位，并修复公开HTML解析时触发的CSP事件属性告警；保留严格Schema和逐字引用，不自动重试。详见 [CSP与栏目边界补充验收](docs/RESEARCH-CSP-ITEMS-VALIDATION.md)。
 
 首次真实DeepSeek调用已由用户批准并执行，但报告失败停在向导第6步。本地记录为validation、预留0.015054 USD、Token未知；用户控制台对应时段有1次请求及Token统计。已修复通用错误分类和usage在校验失败时丢失的问题，保持Schema/逐字证据/预算门禁；537项单元两轮、19项Chrome Mock专项与构建通过，1项独占端口测试跳过。旧响应未保留，具体真实失败原因和报告无法从旧通用记录恢复；本轮没有再次付费调用。详见 [首次DeepSeek失败诊断](docs/DEEPSEEK-FIRST-CALL-DIAGNOSTICS.md)。

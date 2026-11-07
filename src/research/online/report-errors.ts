@@ -1,6 +1,7 @@
 // Only fixed codes/messages may leave the validator. Never include model data,
 // Ajv instance paths, unknown field names, quotes or source identifiers.
 const messages = {
+ research_evidence_ref:'证据编号未知、与来源不符或已失效；未替换为其他摘录。',
  research_version:'报告 Schema 版本与本次确认不符。',
  research_shape:'报告或栏目不是要求的 JSON 对象。',
  research_fields:'报告 Schema 必需字段缺失或存在多余字段。',
@@ -21,5 +22,5 @@ const itemReasons={type:'返回值不是数组',empty:'返回了空数组（0 �
 export function itemReportError(section:string,value:unknown){return new ResearchReportError('research_items',{section,reason:!Array.isArray(value)?'type':value.length===0?'empty':'excess'});}
 export class ResearchReportError extends Error {
  constructor(readonly code:ResearchReportCode,context?:{section:string;reason:keyof typeof itemReasons}){const detail=code==='research_items'&&context&&Object.hasOwn(columns,context.section)&&Object.hasOwn(itemReasons,context.reason)?` 栏目「${columns[context.section]}」：${itemReasons[context.reason]}。`:'';super('['+code+'] '+messages[code]+detail+' 未保存有效报告；费用预留保留，不自动重试。');}
- get stage():'schema'|'evidence'|'validator'{return this.code==='research_validator'?'validator':/^research_(source|quote|original|url)/.test(this.code)?'evidence':'schema';}
+ get stage():'schema'|'evidence'|'validator'{return this.code==='research_validator'?'validator':/^research_(source|quote|original|url|evidence)/.test(this.code)?'evidence':'schema';}
 }
