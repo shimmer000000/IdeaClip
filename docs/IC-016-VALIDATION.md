@@ -74,6 +74,8 @@ IC-016C最终475项单元、生产构建与89项Chrome全量通过；Windows新�
 
 ## 待批准与遗留
 
+**2026-11-07后续范围更新：**下述“尚未准备Key/真实搜索待批准”为本阶段原始记录。随后用户已在本机配置Brave Key，完成自有SSH出口、Windows与Chrome免费检查，并在查看1次search/0.005 USD预留的预览后另行明确批准执行。结果截图显示任务完成1/1，保存两条摘要来源；其中一条含Not Found，不能作为有效定价证据。本次未读结果正文，实际账单及DeepSeek仍待验收；旧失败任务和原预留保留。详细证据范围见 [SSH出口最新人工验收](SSH-EGRESS-VALIDATION.md#最新进度windows实际验收及单次brave搜索)。不得把这次单次批准延伸为新的付费授权。
+
 Brave：用户尚未准备 Key。已说明这是关键词搜索凭证，与代理 Token、DeepSeek Key 分开；免费 health 及公开 URL 读取不需要它。申请须用户自行在[官方控制台](https://api-dashboard.search.brave.com/documentation/guides/authentication)选套餐/建 Key，不要求把完整 Key 发聊天，不代购。以后真实联调须列出具体关键词、服务、请求数（建议1次）、当时账户单价/估算及额度消耗，逐次批准后执行。认证/额度/空结果及费用记录本轮只有 Mock 证据。
 
 DeepSeek：用户设置截图确认provider为DeepSeek、模型`deepseek-flash`、完整端点`https://api.deepseek.com/chat/completions`、120000ms、max_tokens、输出4096、每日0.10 USD、输入0.30/输出1.20 USD每百万Token。密钥栏为空的占位文字不证明当前凭据有效；没有读取密钥。后续截图已显示输出改为8192及长期风险确认勾选；底部端点授权尚未勾选、保存按钮禁用。已指导用户自行核对官方端点后批准并保存；没有操作原生权限或确认付费。图像能力虽勾选，本轮研究不读取或发送截图。尚未取得修改保存成功或本次调用批准。
