@@ -64,6 +64,68 @@ async function confirm(target = page, images = false) { const dialog = target.ge
 async function waitReport(target = page) { await expect(target.getByRole('heading', { name: '商业分析报告', exact: true })).toBeVisible(); await expect(target.locator('.ai-report section')).toHaveCount(15); }
 async function downloadBackup(info: TestInfo) { const received = settings.waitForEvent('download'); await settings.getByRole('button', { name: '立即备份', exact: true }).click(); const file = await received; const path = info.outputPath('AI-Report-Backup.zip'); await mkdir(dirname(path), { recursive: true }); await file.saveAs(path); return path; }
 
+test('IC-011：手动项目、阶段历史、任务看板与列表、审核后复制 Codex 指令', async ({},info)=>{
+  await page.goto(`chrome-extension://${harness.extensionId}/notes.html?projects`);
+  await page.getByRole('button',{name:'创建孵化项目',exact:true}).click();
+  await page.getByLabel('项目名称',{exact:true}).fill('本机孵化验收');
+  await page.getByLabel('项目描述',{exact:true}).fill('独立开发者的本地研究工具');
+  await page.getByLabel('MVP 范围',{exact:true}).fill('React + TypeScript，先验证需求');
+  await page.getByLabel('当前阶段',{exact:true}).selectOption('validation');
+  await page.getByRole('button',{name:'保存项目',exact:true}).click();
+  await expect(page.getByRole('status')).toContainText('项目已保存');
+  await page.getByText('阶段变更历史与来源引用',{exact:true}).click();
+  await expect(page.getByText(/灵感研究 → 需求验证/)).toBeVisible();
+  await page.getByRole('button',{name:'新增任务',exact:true}).click();
+  await page.getByLabel('任务标题',{exact:true}).fill('访谈目标用户');
+  await page.getByLabel('任务截止日期',{exact:true}).fill('2026-11-30');
+  await page.getByLabel('任务关联灵感',{exact:true}).fill('n-00005');
+  await page.getByLabel('任务验收标准',{exact:true}).fill('记录三次反馈');
+  await page.getByRole('button',{name:'保存任务',exact:true}).click();
+  await expect(page.getByRole('button',{name:'复制 Codex 指令',exact:true})).toBeDisabled();
+  await page.getByRole('button',{name:'编辑任务',exact:true}).click();
+  await page.getByLabel('任务状态',{exact:true}).selectOption('done');
+  await page.getByRole('checkbox',{name:'我已审核此任务及其验收标准，可复制开发指令'}).check();
+  await page.getByRole('button',{name:'保存任务',exact:true}).click();
+  await expect(page.getByText('完成 1 / 1，进度 100%',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'任务列表模式',exact:true}).click();await expect(page.locator('.project-list')).toBeVisible();
+  await page.bringToFront();await page.evaluate(()=>{const write=navigator.clipboard.writeText.bind(navigator.clipboard);navigator.clipboard.writeText=async(text)=>{await write(text);(globalThis as unknown as {copiedText:string}).copiedText=text;};});await page.getByRole('button',{name:'复制 Codex 指令',exact:true}).click();
+  await expect(page.getByRole('status')).toContainText('已复制中文 Codex 指令');
+  const clipboard=await page.evaluate(()=>(globalThis as unknown as {copiedText:string}).copiedText);for(const label of ['项目背景','当前目标','技术要求','任务范围','验收标准','测试要求','Git 提交要求'])expect(clipboard).toContain(label);
+  await page.getByRole('button',{name:'看板模式',exact:true}).click();await expect(page.locator('.project-board')).toBeVisible();
+  await page.locator('.project-board').screenshot({path:info.outputPath('incubation-board.png')});
+  const projects=await page.evaluate(async()=>{const d=await new Promise<IDBDatabase>(r=>{const q=indexedDB.open('ideaclip');q.onsuccess=()=>r(q.result);});const rows=await new Promise<{id:string}[]>(r=>{const q=d.transaction('projects').objectStore('projects').getAll();q.onsuccess=()=>r(q.result);});d.close();return rows;});
+  const profile=harness.profile;await harness.context.close();harness=await collectionHarness(profile);await instrument();page=await harness.context.newPage();await page.goto(`chrome-extension://${harness.extensionId}/notes.html?projects`);await page.getByRole('button',{name:/本机孵化验收 ·/}).click();
+  await expect(page.getByLabel('项目名称',{exact:true})).toHaveValue('本机孵化验收');await expect(page.getByRole('heading',{name:'访谈目标用户',exact:true})).toBeVisible();expect(projects).toHaveLength(1);expect(calls).toHaveLength(0);
+  page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'删除任务',exact:true}).click();await expect(page.getByText('完成 0 / 0，进度 0%',{exact:true})).toBeVisible();
+});
+
+test('IC-011：笔记创建、Mock 方案、人工审核、导入去重与完整 ZIP 恢复',async({},info)=>{
+  await configure();await enable();await page.goto(`chrome-extension://${harness.extensionId}/notes.html?projects&from=note&id=n-00005`);
+  await page.getByRole('button',{name:'创建孵化项目',exact:true}).click();await expect(page.getByLabel('项目名称',{exact:true})).not.toHaveValue('新孵化项目');
+  await page.getByRole('button',{name:'生成项目计划：预览与费用',exact:true}).click();await expect(page.getByRole('dialog')).toContainText('项目孵化待审核方案 v1');expect(calls).toHaveLength(0);await confirm();
+  await expect(page.getByRole('status')).toContainText('已保存待审核方案');await expect(page.getByText('完成 0 / 0，进度 0%',{exact:true})).toBeVisible();await expect(page.getByLabel('当前阶段',{exact:true})).toHaveValue('research');
+  expect(calls).toHaveLength(1);expect(calls[0].body.tools).toBeUndefined();expect(JSON.stringify(calls[0].body)).not.toContain('image_url');
+  await page.getByRole('button',{name:'重新读取（放弃未保存修改）',exact:true}).click();
+  const plan=page.locator('.project-plan');await expect(plan.getByRole('heading',{name:'技术架构建议',exact:true})).toBeVisible();await expect(plan.getByRole('heading',{name:'90 天发展计划',exact:true})).toBeVisible();
+  await expect(plan.getByRole('button',{name:'确认导入审核任务',exact:true})).toBeDisabled();await plan.getByRole('checkbox').first().check();await plan.getByRole('checkbox').last().check();await plan.getByRole('button',{name:'确认导入审核任务',exact:true}).click();await expect(page.getByRole('status')).toContainText('已导入 1 条任务');
+  await plan.getByRole('checkbox').first().check();await plan.getByRole('checkbox').last().check();await plan.getByRole('button',{name:'确认导入审核任务',exact:true}).click();await expect(page.getByRole('status')).toContainText('已导入 0 条任务');
+  await page.locator('.project-plan').screenshot({path:info.outputPath('incubation-plan.png')});const zip=await downloadBackup(info);
+  const entries=await readZip(new Blob([await readFile(zip)]));const metadata=(await Promise.all(entries.filter(e=>e.name.startsWith('data/projects/')).map(e=>e.blob.text()))).join('');expect(metadata).toContain('builtin-incubation') /* source report not executable */;
+  expect(metadata).not.toContain(key);expect(metadata).toContain('n-00005');
+  await page.evaluate(async()=>{const d=await new Promise<IDBDatabase>(r=>{const q=indexedDB.open('ideaclip');q.onsuccess=()=>r(q.result);});const t=d.transaction('projects','readwrite');t.objectStore('projects').clear();await new Promise<void>(r=>{t.oncomplete=()=>r();});d.close();});
+  await settings.getByLabel('选择 IdeaClip 备份文件').setInputFiles(zip);await expect(settings.getByRole('heading',{name:'恢复预览'})).toBeVisible();await settings.getByRole('button',{name:'开始恢复'}).click();await expect(settings.locator('.backup-result')).toContainText('成功 1 条');
+  await page.reload();await page.getByRole('button',{name:/ · 灵感研究/}).click();await expect(page.getByText('完成 0 / 1，进度 0%',{exact:true})).toBeVisible();await expect(page.locator('.project-plan')).toContainText('主要风险与停止条件');expect(calls).toHaveLength(1);
+});
+
+test('IC-011：从已保存 AI 报告创建项目，删除项目保留原始笔记与报告',async()=>{
+  await configure();await enable();await preview();await confirm();await waitReport();
+  await page.getByRole('link',{name:'从报告创建项目',exact:true}).click();await expect(page.getByLabel('创建来源',{exact:true})).toHaveValue('analysis');
+  await page.getByRole('button',{name:'创建孵化项目',exact:true}).click();await expect(page.getByLabel('项目描述',{exact:true})).not.toHaveValue('');
+  await page.getByText('阶段变更历史与来源引用',{exact:true}).click();await expect(page.getByText(/analysis · 来自分析报告的项目/)).toBeVisible();
+  page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'删除项目',exact:true}).click();await expect(page.getByLabel('项目名称',{exact:true})).toHaveCount(0);
+  await page.goto(`chrome-extension://${harness.extensionId}/analysis.html?noteId=n-00005`);await waitReport();expect(calls).toHaveLength(1);
+});
+
 test('默认关闭，配置和预览不请求，取消确认不收费；单次确认后保存、复制、导出和历史版本', async ({}, info) => {
   await expect(settings.getByRole('switch')).toHaveAttribute('aria-checked', 'false'); await expect(page.getByRole('button', { name: 'AI 分析：预览发送内容' })).toBeDisabled(); await configure(); expect(calls).toHaveLength(0); await enable(); await preview(); expect(calls).toHaveLength(0);
   let dialog = page.getByRole('dialog'); await expect(dialog).toContainText('USD'); await expect(dialog.getByRole('button', { name: '确认并发起本次分析' })).toBeDisabled(); await dialog.getByRole('button', { name: '取消，不发送' }).click(); expect(calls).toHaveLength(0);
@@ -163,4 +225,5 @@ test('多灵感对比：选择排序、预览确认、权重无请求、历史�
  await configure();await enable();await page.goto(`chrome-extension://${harness.extensionId}/analysis.html?compare=n-00005&compare=n-00006&compare=n-00005`);await expect(page.getByText('对比范围（2 条）')).toBeVisible();await page.getByRole('button',{name:'上移 2',exact:true}).click();await page.getByRole('button',{name:'预览对比资料与费用'}).click();const dialog=page.getByRole('dialog');await expect(dialog).toContainText('版本');expect(calls).toHaveLength(0);await confirm();await expect(page.getByRole('heading',{name:'横向对比报告',exact:true})).toBeVisible();expect(calls).toHaveLength(1);await page.getByLabel('权重：资金投入').fill('80');expect(calls).toHaveLength(1);await page.getByRole('button',{name:'复制对比报告'}).click();const event=page.waitForEvent('download');await page.getByRole('button',{name:'导出对比 Markdown'}).click();await (await event).saveAs(info.outputPath('comparison.md'));await page.screenshot({path:info.outputPath('comparison.png'),fullPage:true});await page.reload();await page.getByRole('heading',{name:'对比历史'}).waitFor();await page.locator('main>section').last().getByRole('button').first().click();await expect(page.getByRole('heading',{name:'横向对比报告',exact:true})).toBeVisible();expect(calls).toHaveLength(1);
  await page.evaluate(async()=>{const d=await new Promise<IDBDatabase>(resolve=>{const r=indexedDB.open('ideaclip');r.onsuccess=()=>resolve(r.result);});const tx=d.transaction('notes','readwrite');tx.objectStore('notes').delete('n-00006');await new Promise<void>(resolve=>{tx.oncomplete=()=>resolve();});d.close();});await page.reload();await page.locator('main>section').last().getByRole('button').first().click();await expect(page.getByText(/来源缺失/)).toBeVisible();expect(calls).toHaveLength(1);
  const backup=await downloadBackup(info);await settings.getByLabel('选择 IdeaClip 备份文件').setInputFiles(backup);await expect(settings.getByText('校验通过，尚未更改当前数据库。')).toBeVisible();await settings.getByRole('button',{name:'开始恢复',exact:true}).click();await expect(settings.getByText('恢复完成，已通知打开的灵感库刷新。')).toBeVisible();await page.reload();await page.locator('main>section').last().getByRole('button').first().click();await expect(page.getByText(/来源缺失/)).toBeVisible();expect(calls).toHaveLength(1);
+ await page.getByRole('link',{name:'从对比报告创建项目',exact:true}).click();await page.getByRole('button',{name:'创建孵化项目',exact:true}).click();await expect(page.getByText(/来源缺失（note）/).first()).toBeVisible();await expect(page.getByLabel('项目名称',{exact:true})).toBeVisible();expect(calls).toHaveLength(1);
 });

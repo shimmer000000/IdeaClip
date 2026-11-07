@@ -1,3 +1,4 @@
+import type { Details as ProjectDetails } from './incubation/model';
 import type { Skill } from './skills/model';
 import type { SkillPreferences } from './skills/repository';
 import Dexie, { type Table } from 'dexie';
@@ -24,8 +25,8 @@ export interface Note extends NoteDetails {
   updatedAt: number;
 }
 export interface Settings { id: 'general'; aiEnabled: boolean }
-export interface Analysis { comparison?: import("./comparison/model").ComparisonReport; sources?: import("./comparison/model").Source[]; id: string; noteId: string; createdAt: number; content: string; report?: Report; skillReport?: import('./skills/model').SkillReport; template?: Skill; sourceUrl?: string; model?: string; provider?: string; endpointOrigin?: string; inputDigest?: string; inputRevision?: number; imageCount?: number }
-export interface Project { id: string; title: string; noteIds: string[]; createdAt: number; updatedAt: number }
+export interface Analysis { projectId?: string; comparison?: import("./comparison/model").ComparisonReport; sources?: import("./comparison/model").Source[]; id: string; noteId: string; createdAt: number; content: string; report?: Report; skillReport?: import('./skills/model').SkillReport; template?: Skill; sourceUrl?: string; model?: string; provider?: string; endpointOrigin?: string; inputDigest?: string; inputRevision?: number; imageCount?: number }
+export interface Project extends Partial<ProjectDetails> { id: string; title: string; noteIds: string[]; createdAt: number; updatedAt: number }
 export interface Screenshot {
   id: string;
   blob: Blob;
@@ -86,6 +87,7 @@ export class IdeaClipDB extends Dexie {
     this.version(8).stores({});
     this.version(9).stores({ aiTemplates: 'id, updatedAt', skillPreferences: 'id' });
     this.version(10).stores({ comparisonReports: 'id, createdAt' });
+    this.version(11).stores({});
   }
 }
 export const db = new IdeaClipDB();

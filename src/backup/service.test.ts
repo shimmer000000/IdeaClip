@@ -69,7 +69,7 @@ describe('完整备份恢复', () => {
   });
   it('冲突保留本地，连带新记录跳过，避免同 ID 图片误关联；无关记录仍可导入', async () => {
     await fixture(); const local = { ...(await source.screenshots.get('image-0'))!, sourceTitle: '本地不同图片' }; await target.screenshots.put(local); await createNote({ title: '独立新笔记', body: '', tags: [], url: '' }, source);
-    const result = await restoreBackup(await preview(), 'merge', target); expect(result.conflicts).toBe(7); expect(result.succeeded).toBe(2); expect(await target.notes.count()).toBe(1); expect((await target.screenshots.get('image-0'))?.sourceTitle).toBe('本地不同图片'); expect(await target.notes.get('note')).toBeUndefined();
+    const result = await restoreBackup(await preview(), 'merge', target); expect(result.conflicts).toBe(6); expect(result.succeeded).toBe(3); expect((await target.projects.get('project'))?.noteIds).toEqual(['note']); expect(await target.notes.count()).toBe(1); expect((await target.screenshots.get('image-0'))?.sourceTitle).toBe('本地不同图片'); expect(await target.notes.get('note')).toBeUndefined();
   });
   it('未提交草稿 entryKey 冲突保留两端安全，不触发静默覆盖', async () => {
     await fixture(); const draft = (await source.noteDrafts.get('note'))!; await target.noteDrafts.put({ ...draft, id: 'local-id' }); const result = await restoreBackup(await preview(), 'merge', target); expect(result.conflicts).toBeGreaterThan(0); expect(await target.notes.count()).toBe(0); expect(await target.noteDrafts.count()).toBe(1);
@@ -91,7 +91,7 @@ describe('完整备份恢复', () => {
     const bytes = new Uint8Array(await file.arrayBuffer()); bytes[50] ^= 1; await expect(preview(new Blob([bytes]))).rejects.toThrow(); expect(await source.notes.count()).toBe(1);
   });
   it('不兼容的格式和未来 schema 被拒绝', async () => {
-    const file = await exportBackup(source); for (const databaseVersion of [0, 11]) await expect(preview(await rewrite(file, (_entries, manifest) => { manifest.databaseVersion = databaseVersion; }))).rejects.toThrow('不兼容');
+    const file = await exportBackup(source); for (const databaseVersion of [0, 12]) await expect(preview(await rewrite(file, (_entries, manifest) => { manifest.databaseVersion = databaseVersion; }))).rejects.toThrow('不兼容');
     await expect(preview(await rewrite(file, (_entries, manifest) => { manifest.formatVersion = 999 as 1; }))).rejects.toThrow('不兼容');
   });
   it('缺失图片或关联、重复 ID 与恶意 URL 都拒绝', async () => {

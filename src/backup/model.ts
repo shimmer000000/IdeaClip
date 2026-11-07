@@ -1,3 +1,6 @@
+import { FIELDS } from '../incubation/model';
+import { validateProject } from '../incubation/repository';
+import type { Project } from '../storage';
 import { validateComparison, comparisonMarkdown, selectedIds, type Source } from '../comparison/model';
 import { validateSkill, validateSkillReport, skillMarkdown, type Skill, type SkillReport } from '../skills/model';
 import { noteDefaults } from '../inspiration/model';
@@ -115,7 +118,16 @@ export function portableRow(table: BackupTable, value: unknown): Row {
       if (result.skillReport) result.content = skillMarkdown(result.skillReport as SkillReport, result.template as Skill, result.model as string || '模型未记录', result.createdAt as number);
       return result;
     }
-    case 'projects': return { id: key, title: txt(r.title), noteIds: ids(r.noteIds), ...dates() };
+    case 'projects': {
+      const base={id:key,title:txt(r.title),noteIds:ids(r.noteIds),...dates()};
+      if(r.revision===undefined)return base;
+      const project={...base,...Object.fromEntries(Object.keys(FIELDS).map(k=>[k,txt(r[k])])),stage:r.stage,revision:r.revision,
+        refs:array(r.refs).map(x=>{const a=object(x);return {kind:a.kind,id:id(a.id),title:txt(a.title)};}),
+        history:array(r.history).map(x=>{const a=object(x);return {id:id(a.id),from:a.from,to:a.to,at:timestamp(a.at)};}),
+        tasks:array(r.tasks).map(x=>{const a=object(x);return {id:id(a.id),title:txt(a.title),priority:a.priority,status:a.status,due:text(a.due,10),notes:txt(a.notes),noteIds:ids(a.noteIds),milestone:txt(a.milestone),acceptance:txt(a.acceptance),reviewed:bool(a.reviewed),...(a.importKey?{importKey:id(a.importKey)}:{})};}),
+        plans:array(r.plans).map(x=>{const a=object(x);const report=object(a.report);const sections=object(report.sections);const safeSections=Object.fromEntries(Object.entries(sections).map(([k,items])=>[k,array(items).map(x=>{const c=object(x);return {kind:c.kind,text:txt(c.text),evidence:c.evidence===null?null:txt(c.evidence)};})]));return {id:id(a.id),createdAt:timestamp(a.createdAt),model:txt(a.model),report:{schemaVersion:report.schemaVersion,sections:safeSections},imported:ids(a.imported),...(a.templateId!==undefined?{templateId:text(a.templateId,100),templateVersion:txt(a.templateVersion),projectRevision:number(a.projectRevision)}:{}),...(a.sources!==undefined?{sources:array(a.sources).map(x=>{const s=object(x);return {id:id(s.id),title:txt(s.title),revision:number(s.revision),hash:text(s.hash,64)};})}:{})};})};
+      return validateProject(project as unknown as Project) as unknown as Row;
+    }
   }
 }
 export function references(table: BackupTable, row: Row): [BackupTable, string][] {
@@ -128,12 +140,12 @@ export function references(table: BackupTable, row: Row): [BackupTable, string][
   }
   if (table === 'contentCaptures') { add('screenshots', row.screenshotIds); if (row.noteId) out.push(['notes', row.noteId as string]); }
   if (table === 'analyses') out.push(['notes', row.noteId as string]);
-  if (table === 'projects') add('notes', row.noteIds);
+  // Project sources are soft references: missing notes must not block backup.
   return out;
 }
 export function parseManifest(value: unknown): Manifest {
   const r = object(value);
-  if (r.format !== 'IdeaClip' || ![1, 2, 3].includes(r.formatVersion as number) || typeof r.databaseVersion !== 'number' || !Number.isInteger(r.databaseVersion) || r.databaseVersion < 1 || r.databaseVersion > 10) throw new Error('备份格式或数据库版本不兼容，请使用支持该版本的 IdeaClip。');
+  if (r.format !== 'IdeaClip' || ![1, 2, 3].includes(r.formatVersion as number) || typeof r.databaseVersion !== 'number' || !Number.isInteger(r.databaseVersion) || r.databaseVersion < 1 || r.databaseVersion > 11) throw new Error('备份格式或数据库版本不兼容，请使用支持该版本的 IdeaClip。');
   const createdAt = text(r.createdAt, 100); if (!Number.isFinite(Date.parse(createdAt))) throw new Error('备份创建时间无效。');
   const counts = emptyCounts(); const source = object(r.counts); let total = 0;
   for (const table of TABLES) { counts[table] = table === 'comparisonReports' && Number(r.formatVersion) <= 2 && r.databaseVersion <= 9 && source[table] === undefined ? 0 : table === 'aiTemplates' && r.formatVersion === 1 && r.databaseVersion <= 8 && source[table] === undefined ? 0 : number(source[table]); total += counts[table]; }
