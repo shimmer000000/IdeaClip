@@ -40,7 +40,7 @@ async function download(info: TestInfo, filename = 'IdeaClip-Backup.zip') {
   const start = Date.now(); const received = page.waitForEvent('download'); await page.getByRole('button', { name: '立即备份', exact: true }).click(); const file = await received; expect(file.suggestedFilename()).toMatch(/^IdeaClip-Backup-\d{4}-\d{2}-\d{2}\.zip$/);
   const path = info.outputPath(filename); await mkdir(dirname(path), { recursive: true }); await file.saveAs(path); expect(await file.failure()).toBeNull(); await expect(page.getByRole('button', { name: '立即备份', exact: true })).toBeEnabled(); return { path, elapsed: Date.now() - start };
 }
-async function choose(path: string) { await page.getByLabel('选择 IdeaClip 备份文件').setInputFiles(path); await expect(page.getByRole('heading', { name: '恢复预览' })).toBeVisible(); await expect(page.getByRole('button', { name: '开始恢复' })).toBeEnabled(); }
+async function choose(path: string, validationTimeout = 5000) { await page.getByLabel('选择 IdeaClip 备份文件').setInputFiles(path); await expect(page.getByRole('heading', { name: '恢复预览' })).toBeVisible({ timeout: validationTimeout }); await expect(page.getByRole('button', { name: '开始恢复' })).toBeEnabled(); }
 async function replace() { await page.getByLabel('恢复方式').selectOption('replace'); await page.getByRole('button', { name: '开始恢复' }).click(); const dialog = page.getByRole('dialog', { name: '完整替换二次确认' }); await dialog.getByRole('checkbox').check(); await dialog.getByRole('button', { name: '确认替换全部数据' }).click(); }
 async function changeLocalBody(body: string) {
   await page.evaluate(async body => { const db = await new Promise<IDBDatabase>(resolve => { const r = indexedDB.open('ideaclip'); r.onsuccess = () => resolve(r.result); }); const tx = db.transaction('notes', 'readwrite'); const store = tx.objectStore('notes'); const request = store.get('n-00001'); request.onsuccess = () => store.put({ ...request.result, body }); await new Promise<void>(resolve => { tx.oncomplete = () => resolve(); }); db.close(); }, body);
@@ -120,6 +120,8 @@ test('128 张原图的大型备份分批校验恢复，二进制哈希一致', a
     second.onsuccess = () => { for (let index = 49; index <= 128; index++) store.put({ ...(index % 2 ? first.result : second.result), id: `image-${index}` }); };
     await new Promise<void>(resolve => { tx.oncomplete = () => resolve(); }); db.close();
   });
-  const before = await state(); const file = await download(info, 'IdeaClip-Large-Backup.zip'); const bytes = (await readFile(file.path)).length; const validationStart = Date.now(); await choose(file.path); const validationMs = Date.now() - validationStart; const restoreStart = Date.now(); await replace(); await expect(page.locator('.backup-result')).toContainText('成功 369 条'); const restoreMs = Date.now() - restoreStart; expect(await state()).toEqual(before);
+  // This fixture validates 44 MiB and decodes 128 images; it is not a 5s SLA.
+  // Wait for the actual validated preview, retaining all restore/hash assertions.
+  const before = await state(); const file = await download(info, 'IdeaClip-Large-Backup.zip'); const bytes = (await readFile(file.path)).length; const validationStart = Date.now(); await choose(file.path, 30000); const validationMs = Date.now() - validationStart; const restoreStart = Date.now(); await replace(); await expect(page.locator('.backup-result')).toContainText('成功 369 条'); const restoreMs = Date.now() - restoreStart; expect(await state()).toEqual(before);
   const metrics = { notes: 240, screenshots: 128, archiveBytes: bytes, exportMs: file.elapsed, validationMs, restoreMs }; await writeFile(info.outputPath('backup-performance.json'), JSON.stringify(metrics, null, 2)); console.log('BACKUP_PERFORMANCE', JSON.stringify(metrics));
 });

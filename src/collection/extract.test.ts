@@ -44,6 +44,34 @@ describe('正文与来源提取', () => {
     const doc = documentOf(xHtml('456').replaceAll('tweetText', 'changedText'), url);
     expect(extractFromDocument(doc, url).text).toBe('');
   });
+  it('已识别主帖中的嵌套长文章正文不会被当作引用帖清除', () => {
+    const url = 'https://x.com/fixture/status/456';
+    const doc = documentOf(`<article data-testid="tweet"><div data-testid="User-Name">主帖作者</div><a href="/fixture/status/456"><time datetime="2026-11-01">日期</time></a><article><div data-testid="twitterArticleRichTextView"><h1>长文章</h1><p>${paragraph.repeat(3)}</p><a href="https://github.com/example/article">文章项目</a><img src="https://example.org/article.png" alt="文章配图"></div></article><article><div data-testid="User-Name">引用作者</div><a href="/other/status/999"><time>日期</time></a><div data-testid="twitterArticleRichTextView">引用文章不能混入正文</div></article></article>`, url);
+    const result = extractFromDocument(doc, url);
+    expect(result.text).toContain(paragraph);
+    expect(result.text).not.toContain('引用文章不能混入正文');
+    expect(result.author).toBe('主帖作者');
+    expect(result.githubLinks).toContain('https://github.com/example/article');
+    expect(result.images).toContainEqual({ url: 'https://example.org/article.png', description: '文章配图', kind: 'image' });
+  });
+  it.each(['twitterArticleRichTextView', 'longformRichTextComponent'])('长文章 %s 保留可见正文，仍排除引用、独立嵌套帖和隐藏内容', selector => {
+    const url = 'https://x.com/fixture/status/456';
+    const doc = documentOf(`<article><div data-testid="User-Name">主帖作者</div><a href="/fixture/status/456"><time>日期</time></a><article data-testid="${selector}"><p>${paragraph}</p><article role="link" data-testid="quoteTweet"><div data-testid="${selector}">不能采集的引用文章<img src="https://example.org/quote.png"></div></article><article><a href="/other/status/999"><time>另一条帖</time></a><div data-testid="${selector}">独立嵌套帖不能混入</div></article><p hidden>不能采集的隐藏正文</p></article></article>`, url);
+    const result = extractFromDocument(doc, url);
+    expect(result.text).toContain(paragraph);
+    expect(result.text).not.toContain('不能采集');
+    expect(result.text).not.toContain('独立嵌套帖');
+    expect(result.images).toEqual([]);
+    doc.querySelector(`[data-testid="${selector}"]`)!.setAttribute('hidden', '');
+    expect(extractFromDocument(doc, url).text).toBe('');
+  });
+  it('X 可见CSS背景图片可记录，透明占位图、隐藏媒体、头像和危险URL不成为新媒体', () => {
+    const url = 'https://x.com/fixture/status/456';
+    const doc = documentOf(`<style>.painted{background-image:url("https://example.org/visible.png")}</style><article><div data-testid="User-Name">作者</div><a href="/fixture/status/456"><time>日期</time></a><div data-testid="tweetText">${paragraph}</div><div class="painted" aria-label="可见文章配图"><img src="https://example.org/transparent-private.png" style="opacity:0"></div><div style="display:none;background-image:url(https://example.org/hidden.png)">隐藏图片</div><div data-testid="UserAvatar-Container" style="background-image:url(https://example.org/avatar.png)"></div><div style="background-image:url(javascript:alert)"></div></article>`, url);
+    const result = extractFromDocument(doc, url);
+    expect(result.images).toEqual([{url:'https://example.org/visible.png',description:'可见文章配图',kind:'image'}]);
+    expect(doc.querySelector('.painted')?.getAttribute('style')).toBeNull();
+  });
   it('GitHub 只取仓库 README，不推断创建时间', () => {
     const url = 'https://github.com/example/idea';
     const result = extractFromDocument(documentOf(githubHtml, url), url);

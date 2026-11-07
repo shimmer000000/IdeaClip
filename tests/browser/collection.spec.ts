@@ -65,6 +65,32 @@ test('本地 GitHub 和微信页面提取来源与正文', async () => {
   }
 });
 
+test('X 主帖嵌套长文章保留正文、图片与项目链接，引用和推荐不混入', async () => {
+  const { context, cdp, extensionId } = harness;
+  const source = await context.newPage(); await source.goto('https://x.com/fixture/status/777');
+  await source.evaluate(() => {
+    const posts = [...document.querySelectorAll('article')];
+    const main = posts.find(p => [...p.querySelectorAll('a')].some(a => a.getAttribute('href') === '/fixture/status/777' && a.parentElement?.tagName === 'ARTICLE'))!;
+    const body = main.querySelector('[data-testid="tweetText"]')!;
+    const article = document.createElement('article');
+    article.innerHTML = '<div data-testid="twitterArticleRichTextView"><h1>合成长文章标题</h1><p>这是主帖已展开的长文章正文，用户可以正常阅读。</p><p>验证需求、计划和实施步骤，不能把推荐内容混入。</p><style>.article-background{background-image:url(https://fixture.ideaclip.test/css-photo.png)}</style><div class="article-background" aria-label="可见背景配图"><img src="https://fixture.ideaclip.test/transparent.png" style="opacity:0"></div><img src="https://fixture.ideaclip.test/article.png" alt="主帖文章配图"><a href="https://github.com/fixture/article-project">文章项目链接</a><article data-testid="quoteTweet"><div data-testid="longformRichTextComponent">引用文章不能混入</div><img src="https://fixture.ideaclip.test/quote.png"></article></div>';
+    body.replaceWith(article);
+    main.querySelector('[data-testid="tweet-text-show-more-link"]')?.remove();
+  });
+  const preview = await collectPage(source, context, cdp, extensionId);
+  const text = await preview.getByLabel('正文预览', { exact: true }).inputValue();
+  expect(text).toContain('合成长文章标题'); expect(text).toContain('主帖已展开的长文章正文');
+  for (const noise of ['错误的推荐帖', '引用文章不能混入', '引用内容不要混入', '无关评论']) expect(text).not.toContain(noise);
+  await expect(preview.getByLabel('作者', { exact: true })).toHaveValue('测试作者 @fixture');
+  expect(await preview.getByLabel('图片说明').evaluateAll(nodes => nodes.map(node => (node as HTMLInputElement).value))).toContain('主帖文章配图');
+  const media = await preview.getByLabel('图片 URL').evaluateAll(nodes => nodes.map(node => (node as HTMLInputElement).value));
+  expect(media).toContain('https://fixture.ideaclip.test/article.png');
+  expect(media).toContain('https://fixture.ideaclip.test/css-photo.png');
+  expect(media).not.toContain('https://fixture.ideaclip.test/transparent.png');
+  expect(media).not.toContain('https://fixture.ideaclip.test/quote.png');
+  await expect(preview.getByLabel('外部链接（每行一个 HTTP / HTTPS URL）')).toHaveValue(/github.com\/fixture\/article-project/);
+});
+
 test('无正文与浏览器权限不足时可手动补正文，完整性状态保持真实', async () => {
   const { context, cdp, extensionId } = harness;
   for (const url of ['https://fixture.ideaclip.test/empty', 'chrome://extensions/']) {

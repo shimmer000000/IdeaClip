@@ -3,6 +3,7 @@ import { assessQuality, paragraphMap, type TextQuality } from './quality';
 import { cleanText, emptyPage, githubProjects, httpUrl, MAX_IMAGES, MAX_LINKS, MAX_TEXT, sourcePlatform, type ExtractedPage, type PageImage, type PageLink } from './model';
 
 const noise = 'script,style,noscript,template,nav,aside,footer,form,button,[role="navigation"],[role="complementary"],[hidden],[aria-hidden="true"],#comments,.comments,.comment-list,.related,.recommendations,.advertisement,[data-testid*="recommend"],#ideaclip-region-selector';
+const xRichText = '[data-testid="twitterArticleRichTextView"],[data-testid="longformRichTextComponent"]';
 
 function textOf(root: Element): string {
   const walker = root.ownerDocument.createTreeWalker(root, 5);
@@ -27,6 +28,9 @@ function visibleClone(root: Element, metrics: { hiddenRemoved: number }): Elemen
     const style = view?.getComputedStyle(element);
     const hidden = element.matches('[hidden],[aria-hidden="true"],input,textarea,select,[contenteditable]:not([contenteditable="false" i])') || style?.display === 'none' || style?.visibility === 'hidden' || style?.visibility === 'collapse' || style?.opacity === '0';
     if (hidden) { copies[index].remove(); metrics.hiddenRemoved++; }
+    // Preserve the image actually painted by a visible element. X can render
+    // photos as CSS backgrounds while keeping its img element transparent.
+    else if (style?.backgroundImage && style.backgroundImage !== 'none') (copies[index] as HTMLElement).style?.setProperty('background-image', style.backgroundImage);
   });
   if (!clone.parentNode && copies[0].matches('[hidden],[aria-hidden="true"]')) return null;
   const rootStyle = view?.getComputedStyle(root);
@@ -54,10 +58,11 @@ function safeLinks(root: Element, sourceUrl: string): PageLink[] {
 }
 function safeImages(root: Element, sourceUrl: string): PageImage[] {
   const images = new Map<string, PageImage>();
-  for (const node of root.querySelectorAll('img,video[poster]')) {
+  for (const node of root.querySelectorAll('img,video[poster],[style*="background"]')) {
     if (node.closest('[data-testid="Tweet-User-Avatar"],[data-testid="UserAvatar-Container"]')) continue;
     const isVideo = node.tagName === 'VIDEO';
-    const url = httpUrl(isVideo ? node.getAttribute('poster') : node.getAttribute('data-src') || node.getAttribute('src'), sourceUrl);
+    const background = /^url\((?:"([^"]+)"|'([^']+)'|([^'"\)]+))\)$/.exec((node as HTMLElement).style?.backgroundImage ?? '');
+    const url = httpUrl(isVideo ? node.getAttribute('poster') : node.tagName === 'IMG' ? node.getAttribute('data-src') || node.getAttribute('src') : background?.[1] || background?.[2] || background?.[3], sourceUrl);
     if (!url || /\/profile_images\//.test(url)) continue;
     const description = cleanText(node.getAttribute('alt') || node.getAttribute('aria-label') || node.closest('figure')?.querySelector('figcaption')?.textContent || '');
     images.set(url, { url, description: description.slice(0, 2000), kind: isVideo || node.closest('[data-testid="videoPlayer"]') ? 'video-cover' : 'image' });
@@ -86,12 +91,19 @@ export function extractFromDocument(doc: Document, originalUrl: string): Extract
     if (!post) return emptyPage(page.sourceUrl, page.title, '未找到与当前 URL 帖子 ID 匹配的主帖。页面可能未加载、需登录、不可访问，或 DOM 已变化；没有使用推荐帖代替。');
     method = 'x'; const clone = visibleClone(post, metrics);
     if (!clone) return emptyPage(page.sourceUrl, page.title, '主帖内容当前不可见，请手动粘贴可读取内容。');
-    clone.querySelectorAll('[data-testid="quoteTweet"],article,[role="link"]').forEach(node => {
-      if (node.matches('[role="link"]') && !node.querySelector('[data-testid="tweetText"],[data-testid="User-Name"]')) return;
+    clone.querySelectorAll('[data-testid="quoteTweet"],[role="link"]').forEach(node => {
+      if (!node.matches('[data-testid="quoteTweet"]') && !node.querySelector('[data-testid="tweetText"],[data-testid="User-Name"]')) return;
+      node.remove();
+    });
+    [...clone.querySelectorAll('article')].reverse().forEach(node => {
+      // A semantic article may wrap the current post's read-only long text.
+      // Keep only recognised text containers without a separate post identity;
+      // quoted tweets and independent nested posts are still removed.
+      if ((node.matches(xRichText) || node.querySelector(xRichText)) && !node.querySelector('[data-testid="User-Name"],[data-testid="tweetText"],a time')) return;
       node.remove();
     });
     clone.querySelectorAll('[data-testid="tweet-text-show-more-link"]').forEach(node => node.remove());
-    const rich = clone.querySelector('[data-testid="twitterArticleRichTextView"],[data-testid="longformRichTextComponent"]');
+    const rich = clone.querySelector(xRichText);
     root = rich || clone.querySelector('[data-testid="tweetText"]');
     const permalink = [...post.querySelectorAll('a[href]')].find(anchor => anchor.querySelector('time') && new URL(httpUrl(anchor.getAttribute('href'), page.sourceUrl) ?? page.sourceUrl).pathname.match(/\/status\/(\d+)/)?.[1] === postId);
     page.author = cleanText(post.querySelector('[data-testid="User-Name"]')?.textContent ?? '') || null;
@@ -103,7 +115,13 @@ export function extractFromDocument(doc: Document, originalUrl: string): Extract
     page.status = 'partial';
     page.warnings.push('仅采集当前主帖已加载、已展开且可见的内容，不包含线程后续帖、引用帖、评论或登录后才能读取的内容。');
     if (post.querySelector('[data-testid="tweet-text-show-more-link"]') || [...post.querySelectorAll('button,a')].some(n => /^(Show more|显示更多|展开|查看更多)$/i.test(cleanText(n.textContent ?? '')))) page.warnings.push('检测到展开入口，正文可能被截断。请在原页面手动展开后重新提取。');
-    if (!root) page.warnings.push('未识别到主帖正文节点，可能是纯媒体帖或页面 DOM 已变化，请手动核对。');
+    if (!root) {
+      page.warnings.push('未识别到主帖正文节点，可能是纯媒体帖或页面 DOM 已变化，请手动核对。');
+      // Counts and restricted component names only. Never include page HTML,
+      // hidden text, cookies, credentials or a fallback from another post.
+      const componentNames = [...new Set([...doc.querySelectorAll('[data-testid]')].map(n => n.getAttribute('data-testid') ?? '').filter(name => /^(?:twitterArticle|longform)[A-Za-z]{1,60}$/.test(name)))].slice(0, 12);
+      page.warnings.push(`X 结构检查（不含正文）：主帖文字节点 ${post.querySelectorAll('[data-testid="tweetText"]').length}；主帖长文节点 ${post.querySelectorAll(xRichText).length}；清理后长文节点 ${clone.querySelectorAll(xRichText).length}；页面长文节点 ${doc.querySelectorAll(xRichText).length}；文章组件 ${componentNames.join('、') || '未识别'}。未改用其他帖子内容。`);
+    }
   } else if (page.platform === 'github') {
     method = 'github';
     const parts = url.pathname.split('/').filter(Boolean);
