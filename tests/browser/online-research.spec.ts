@@ -7,6 +7,7 @@ import { createResearchProxy, type SafeResponse, type secureGet } from '../../to
 import { collectionHarness } from './collection-harness';
 import { REPORT_SECTIONS, sourceDigest, type ResearchSource } from '../../src/research/online/model';
 import { readZip } from '../../src/backup/zip';
+import { pricingHtml } from '../pricing-fixture';
 let harness:Awaited<ReturnType<typeof collectionHarness>>;let page:Page;let base:string;let proxy:Server;let aiServer:Server;let proxyEndpoint:string;let aiEndpoint:string;
 const proxyKey='synthetic-browser-proxy-key',braveKey='synthetic-browser-brave-key',aiKey='synthetic-browser-research-ai-key';const upstream:string[]=[];const aiCalls:unknown[]=[];const unexpected:string[]=[];const errors:string[]=[];const logs:string[]=[];
 let mode:'success'|'hold'|'quota'|'empty'|'filtered'='success';let forged=false;
@@ -22,6 +23,7 @@ test.beforeEach(async()=>{upstream.length=0;aiCalls.length=0;unexpected.length=0
   if(url.hostname==='api.search.brave.com'&&mode==='filtered')return reply(JSON.stringify({web:{results:[{url:'https://other.example/pricing',title:'其他来源',description:'不在本次授权范围'}]}}));
   if(url.hostname==='api.search.brave.com')return reply(JSON.stringify({web:{results:[{url:'https://example.com/pricing',title:'公开工具定价',description:'公开资料声明按月收费，需求仍待用户访谈核实。'},{url:'https://github.com/owner/repo',title:'公开开源项目',description:'仓库许可证与维护状态待核对。'},{url:'http://127.0.0.1/private',title:'不允许来源',description:'必须被过滤'}]}}));
   if(url.hostname==='api.github.com')return reply(JSON.stringify({private:false,full_name:'owner/repo',description:'合成公开仓库',created_at:'2026-10-01T00:00:00Z',stargazers_count:3,forks_count:1,license:{spdx_id:'MIT'}}));
+  if(url.pathname==='/pricing-cards')return reply(pricingHtml,'text/html');
   if(url.pathname==='/business-article')return reply('<html><head><title>公开商业模式文章</title></head><body><article><h1>商业模式案例</h1><p>'+('这篇公开文章是作者的商业假设，真实需求和盈利仍待核验。'.repeat(30))+'</p></article></body></html>','text/html');
   return reply('<html><head><title>公开产品定价</title><meta property="article:published_time" content="2026-10-01T00:00:00Z"></head><body><article><h1>公开产品与价格说明</h1><p>'+('公开产品说明由作者发布，基础版按月收费，是否解决需求仍需用户访谈。'.repeat(30))+'</p><img src="https://evil.example/image"><script>fetch("https://evil.example/private")</script></article></body></html>','text/html');
  };
@@ -33,6 +35,14 @@ async function prepare(queries='工具定价',urls=''){await page.getByLabel('�
 async function confirm(){const d=page.getByRole('dialog',{name:'联网研究逐次确认'});await expect(d).toBeVisible();await d.getByRole('checkbox',{name:/我确认本次计划/}).check();await d.getByRole('button',{name:'确认执行本次联网研究'}).click();}
 async function completed(){await expect(page.getByText('联网研究完成，资料已保存；尚未调用AI综合。',{exact:true})).toBeVisible();}
 async function configureAI(){const settings=await harness.context.newPage();await settings.goto(base+'settings.html');await expect(settings.getByRole('switch',{name:'AI 分析总开关'})).toBeEnabled();await settings.getByLabel('AI 服务商',{exact:true}).selectOption('custom');for(const [label,value]of [['AI 模型名称','mock-research'],['AI 接口地址',aiEndpoint],['AI API Key',aiKey],['AI 每日预算','1'],['AI 输入单价','1'],['AI 输出单价','1']])await settings.getByLabel(label,{exact:true}).fill(value);await settings.getByRole('checkbox',{name:/我授权向上方指定端点/}).check();await settings.getByRole('button',{name:'保存配置并授权域名'}).click();await expect(settings.getByText(/保存成功/)).toBeVisible();await settings.getByRole('switch',{name:'AI 分析总开关'}).click();return settings;}
+test('定价卡片回归：单次Mock公开读取保留价格周期及FAQ，重开仍保存且不搜索不调用AI',async()=>{
+ await configure();await prepare('','https://example.com/pricing-cards');expect(upstream).toHaveLength(0);await expect(page.getByRole('dialog',{name:'联网研究逐次确认'})).toContainText('read：');await confirm();await completed();
+ const card=page.locator('.online-research article.research-source');await expect(card).toHaveCount(1);await card.locator('summary').click();
+ for(const text of ['$7 USD','$9 USD','$11 USD','$13 USD','billed annually','billed monthly','FAQ','仍需人工核对'])await expect(card).toContainText(text);
+ for(const text of ['$999','$888','$887','$886','$885','blocked.example'])await expect(card).not.toContainText(text);
+ await expect(card).toContainText(/SHA-256 [a-f0-9]{64}/);expect(upstream).toEqual(['https://example.com/pricing-cards']);expect(aiCalls).toHaveLength(0);
+ await page.reload();await page.getByRole('button',{name:/公开商业机会研究.*v1/}).click();await page.getByRole('button',{name:'联网研究',exact:true}).click();await page.locator('.online-research article.research-source summary').click();await expect(page.locator('.online-research article.research-source')).toContainText('$13 USD');expect(upstream).toHaveLength(1);expect(aiCalls).toHaveLength(0);
+});
 test('IC-013二期：默认关闭/未确认零请求，真实本机参考代理获取摘要、正文和GitHub，再单次确认Mock AI报告',async({},info)=>{
  await expect(page.getByRole('switch',{name:'联网研究总开关'})).toHaveAttribute('aria-checked','false');expect(upstream).toHaveLength(0);await configure();expect(upstream).toHaveLength(0);await prepare();expect(upstream).toHaveLength(0);await page.getByRole('dialog',{name:'联网研究逐次确认'}).getByRole('button',{name:'取消，不联网'}).click();expect(upstream).toHaveLength(0);
  await prepare();await confirm();await completed();expect(upstream).toHaveLength(1);await expect(page.locator('.online-research .research-source')).toHaveCount(2);await prepare('','https://example.com/pricing\nhttps://github.com/owner/repo');await confirm();await completed();expect(upstream).toHaveLength(3);await expect(page.locator('.online-research .research-source')).toHaveCount(4);await expect(page.locator('.online-research')).toContainText('2026-10-01');await expect(page.locator('.online-research')).toContainText('readable');

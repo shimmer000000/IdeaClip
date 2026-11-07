@@ -10,16 +10,24 @@ function plainHtml(html:string){
  template.content.querySelectorAll('script,style,link,meta,base,img,iframe,object,embed,video,audio,source,svg,math,form,input,textarea,button,noscript,nav,header,footer,aside,menu,dialog,[hidden],[inert],[aria-hidden="true"],[role="navigation"],[role="complementary"]').forEach(e=>e.remove());
  template.content.querySelectorAll('[style]').forEach(e=>{if(/(?:display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0(?:\s*[;}]|\s*$))/i.test(e.getAttribute('style')??''))e.remove();});
  template.content.querySelectorAll('*').forEach(e=>{for(const a of [...e.attributes])if(!['class','id'].includes(a.name))e.removeAttribute(a.name);});
- const doc=document.implementation.createHTMLDocument('');doc.body.append(template.content.cloneNode(true));const parsed=new Readability(doc).parse();return parsed?.textContent?.trim()??'';
+ const doc=document.implementation.createHTMLDocument('');doc.body.append(template.content.cloneNode(true));
+ // Product pages can put short price cards outside the long FAQ chosen by
+ // Readability. Keep their sanitized static main content, without running JS
+ // or treating DOM readability as a guarantee of completeness or truth.
+ const root=doc.querySelector('main')??doc.body;const text=root.textContent??'';
+ const pricing=!root.querySelector('article')&&root.querySelectorAll('h2,h3,h4').length>=2&&/(?:[$€£¥￥]\s*\d|\d[\d.,]*\s*(?:USD|EUR|GBP|CNY)\b)/i.test(text)&&/\b(?:monthly|annually|annual|month|year|one[ -]time|billed)\b|月付|年付|每月|每年|一次性/i.test(text);
+ if(pricing){const blocks=new Set(['H1','H2','H3','H4','H5','H6','P','DIV','SECTION','UL','OL','LI','DL','DT','DD','TABLE','TR','BR']);const plain=(node:Node):string=>node.nodeType===3?node.textContent??'':node.nodeType===1?(blocks.has(node.nodeName)?'\n':'')+[...node.childNodes].map(plain).join('')+(blocks.has(node.nodeName)?'\n':''):'';return {content:plain(root).replace(/[\t ]+/g,' ').replace(/ *\n */g,'\n').replace(/\n{3,}/g,'\n\n').trim(),pricing:true};}
+ const parsed=new Readability(doc).parse();return {content:parsed?.textContent?.trim()??'',pricing:false};
 }
 export function parseProxyResponse(value:unknown,op:Operation,c:ResearchConfig):SourceData[]{
  const raw=obj(value);if(raw.version!==1)throw new Error('研究代理协议版本不兼容。');
  if(op.kind==='search')return list(raw.results,5).map(v=>{const r=obj(v);let url:string;try{url=researchUrl(r.url,c.hosts);}catch{return null;}const content=txt(r.snippet,30000);return {url,title:txt(r.title,1000),content:content.slice(0,c.maxText),publishedAt:date(r.publishedAt),status:'snippet' as const,type:'search' as const,reason:content.length>c.maxText?'搜索摘要已按本次长度限制截取。':'搜索摘要，不代表已读取原网页。'};}).filter((r):r is NonNullable<typeof r>=>r!==null);
  const url=researchUrl(raw.url,c.hosts);if(url!==op.value)throw new Error('代理返回的来源 URL 与确认的请求不一致。');
  if(!['readable','unreadable'].includes(String(raw.status)))throw new Error('来源读取状态无效。');
- let content=raw.status==='unreadable'?'':raw.html!==undefined?plainHtml(txt(raw.html,2*1024*1024)):txt(raw.text,30000);
+ const html=raw.status==='readable'&&raw.html!==undefined?plainHtml(txt(raw.html,2*1024*1024)):null;
+ let content=raw.status==='unreadable'?'':html?html.content:txt(raw.text,30000);
  const truncated=raw.truncated===true||content.length>c.maxText;content=content.slice(0,c.maxText);
- return [{url,title:txt(raw.title,1000),content,publishedAt:date(raw.publishedAt),status:!content?'unreadable':truncated?'partial':'readable',type:op.kind==='github'?'github':'webpage',reason:!content?'未取得公开可读正文；不绕过登录或访问限制。':truncated?'正文已按本次长度上限截取，资料不完整。':'代理公开读取，尚未独立核验。'}];
+ return [{url,title:txt(raw.title,1000),content,publishedAt:date(raw.publishedAt),status:!content?'unreadable':truncated?'partial':'readable',type:op.kind==='github'?'github':'webpage',reason:!content?'未取得公开可读正文；不绕过登录或访问限制。':truncated?'正文已按本次长度上限截取，资料不完整。':html?.pricing?'保留静态HTML中的定价卡片及正文；动态内容、计费条件和资料完整性仍需人工核对，尚未独立核验。':'代理公开读取，尚未独立核验。'}];
 }
 function date(v:unknown){if(v===null||v===undefined||v==='')return null;const s=txt(v,100);if(!Number.isFinite(Date.parse(s)))throw new Error('来源时间无效。');return s;}
 export async function proxyJSON(fetcher:typeof fetch,c:ResearchConfig,key:string,payload:unknown,signal:AbortSignal,maxBytes=2*1024*1024){

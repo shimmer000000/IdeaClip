@@ -1,0 +1,15 @@
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { JSDOM } from 'jsdom';
+import { parseProxyResponse } from './adapter';
+import { DEFAULT_RESEARCH } from './model';
+import { pricingHtml } from '../../../tests/pricing-fixture';
+let dom:JSDOM;
+beforeEach(()=>{dom=new JSDOM('');vi.stubGlobal('document',dom.window.document);});
+afterEach(()=>{dom.window.close();vi.unstubAllGlobals();});
+const config={...DEFAULT_RESEARCH,hosts:['example.com']};
+const op={kind:'read' as const,value:'https://example.com/pricing'};
+const parse=(html=pricingHtml,maxText=config.maxText)=>parseProxyResponse({version:1,url:op.value,title:'合成产品定价',html,status:'readable',publishedAt:null},op,{...config,maxText})[0];
+it('保留产品定价卡片金额/计费周期与长FAQ，不把提取成功当事实核验',()=>{const r=parse();for(const s of ['Sync','$7 USD','$9 USD','Publish','$11 USD','$13 USD','billed annually','billed monthly','商业使用'])expect(r.content).toContain(s);expect(r.reason).toContain('仍需人工核对');expect(r.reason).toContain('尚未独立核验');expect(r.publishedAt).toBeNull();expect(r.status).toBe('readable');});
+it('结构化定价提取仍排除导航、隐藏节点、表单、脚本与远程资源',()=>{const r=parse();for(const s of ['$999','$888','$887','$886','$885','blocked.example','private-form','fetch(','alert('])expect(r.content).not.toContain(s);});
+it('无main的静态定价页也保留卡片，长度限制仍明确标记部分读取',()=>{expect(parse(pricingHtml.replace(/<\/?main>/g,'')).content).toContain('$13 USD');const r=parse(pricingHtml,100);expect(r.status).toBe('partial');expect(r.content.length).toBe(100);expect(r.reason).toContain('不完整');});
+it('保留文章Readability路径，不因文章包含价格与多个标题改用产品卡片路径',()=>{const r=parse(`<html><body><main><article><h2>市场访谈</h2><p>${'这是作者的访谈记录与未验证假设。'.repeat(60)}</p><h3>成本讨论</h3><p>$7 USD monthly</p></article><section><h2>推荐产品</h2><p>推荐文本</p></section></main></body></html>`);expect(r.content).toContain('访谈记录');expect(r.reason).not.toContain('定价卡片');});
