@@ -1,16 +1,11 @@
 import { proxyFailure, ResearchFailure } from './errors';
 import { Readability } from '@mozilla/readability';
+import { researchDocument } from './safe-html';
 import { obj, txt, list, researchUrl, type Operation, type ResearchConfig } from './model';
 export interface SourceData {url:string;title:string;content:string;publishedAt:string|null;status:'snippet'|'readable'|'partial'|'unreadable';type:'search'|'webpage'|'github';reason:string}
 export interface ResearchAdapter {execute(operation:Operation,config:ResearchConfig,key:string,signal:AbortSignal):Promise<SourceData[]>}
 function plainHtml(html:string){
- // Template contents remain inert: strip executable/resource elements and every
- // resource/event attribute BEFORE copying into an offscreen document for Readability.
- const template=document.createElement('template');template.innerHTML=html;
- template.content.querySelectorAll('script,style,link,meta,base,img,iframe,object,embed,video,audio,source,svg,math,form,input,textarea,button,noscript,nav,header,footer,aside,menu,dialog,[hidden],[inert],[aria-hidden="true"],[role="navigation"],[role="complementary"]').forEach(e=>e.remove());
- template.content.querySelectorAll('[style]').forEach(e=>{if(/(?:display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0(?:\s*[;}]|\s*$))/i.test(e.getAttribute('style')??''))e.remove();});
- template.content.querySelectorAll('*').forEach(e=>{for(const a of [...e.attributes])if(!['class','id'].includes(a.name))e.removeAttribute(a.name);});
- const doc=document.implementation.createHTMLDocument('');doc.body.append(template.content.cloneNode(true));
+ const doc=researchDocument(html);
  // Product pages can put short price cards outside the long FAQ chosen by
  // Readability. Keep their sanitized static main content, without running JS
  // or treating DOM readability as a guarantee of completeness or truth.

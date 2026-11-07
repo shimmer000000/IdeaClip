@@ -2,7 +2,7 @@ import validateOpportunity from '../../ai/generated/research.js';
 import { publicUrl } from '../model';
 import { digest } from '../../backup/zip';
 import type { Skill } from '../../skills/model';
-import { ResearchReportError } from './report-errors';
+import { ResearchReportError, itemReportError } from './report-errors';
 export const TOPICS = { competitor:'竞争对手研究', business:'商业模式调查', pricing:'产品定价调查', github:'GitHub 项目调查', demand:'市场需求验证', custom:'自定义研究问题' };
 export interface ResearchConfig { id:'online'; version:string; enabled:boolean; endpoint:string; hosts:string[]; timeoutMs:number; priceUsd:number; dailyBudgetUsd:number; maxSearches:number; maxPages:number; maxText:number }
 export const DEFAULT_RESEARCH:ResearchConfig={id:'online',version:'',enabled:false,endpoint:'',hosts:[],timeoutMs:30000,priceUsd:0,dailyBudgetUsd:0.1,maxSearches:3,maxPages:5,maxText:20000};
@@ -61,7 +61,7 @@ export function validateResearchReport(value:unknown,sources:ResearchSource[],ex
  const r=record(value);if((r.schemaVersion!==1&&r.schemaVersion!==2)||expectedVersion!==undefined&&r.schemaVersion!==expectedVersion)throw new ResearchReportError('research_version');
  fields(r,['schemaVersion','sections']);const sections=record(r.sections),names=r.schemaVersion===2?OPPORTUNITY_SECTIONS:REPORT_SECTIONS;fields(sections,Object.keys(names));if(new Set(sources.map(s=>s.id)).size!==sources.length)throw new ResearchReportError('research_source');
  const urls=new Set(sources.map(s=>s.url));
- const out=Object.fromEntries(Object.keys(names).map(k=>{const items=sections[k];if(!Array.isArray(items)||items.length<1||items.length>8)throw new ResearchReportError('research_items');return [k,items.map(v=>{
+ const out=Object.fromEntries(Object.keys(names).map(k=>{const items=sections[k];if(!Array.isArray(items)||items.length<1||items.length>8)throw itemReportError(k,items);return [k,items.map(v=>{
    const c=record(v);fields(c,['kind','text','sourceId','quote']);if(!['original','claim','inference','hypothesis'].includes(String(c.kind)))throw new ResearchReportError('research_kind');
    const text=textValue(c.text,3000);if(!text.trim())throw new ResearchReportError('research_text');
    if(c.sourceId!==null&&(typeof c.sourceId!=='string'||!c.sourceId.trim()||c.sourceId.length>500||/[\u0000-\u001f]/.test(c.sourceId)))throw new ResearchReportError('research_source');

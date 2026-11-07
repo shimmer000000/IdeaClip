@@ -21,6 +21,7 @@
     "@mozilla/readability": "^0.6.0",
     "dexie": "^4.4.7",
     "dexie-react-hooks": "^4.4.0",
+    "parse5": "8.1.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

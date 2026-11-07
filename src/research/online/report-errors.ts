@@ -15,7 +15,11 @@ const messages = {
  research_validator:'本地研究报告校验器发生异常，无法判定报告是否有效。',
 } as const;
 export type ResearchReportCode=keyof typeof messages;
+// Labels and failure reasons are application-owned constants, never model keys/data.
+const columns:Record<string,string>={questions:'研究问题',findings:'关键发现',support:'支持证据',counter:'反面证据',uncertainty:'不确定性',competition:'竞争产品比较',opportunity:'商业机会判断',validation:'建议验证步骤',conclusion:'核心结论',businessModel:'商业模式',demand:'市场需求与目标用户假设',evidence:'主要证据',investment:'初期投入假设',revenue:'盈利路径',risks:'风险',unknowns:'未验证事项',sevenDays:'7天验证计划',mvp:'MVP 建议'};
+const itemReasons={type:'返回值不是数组',empty:'返回了空数组（0 条）',excess:'返回条目超过 8 条'};
+export function itemReportError(section:string,value:unknown){return new ResearchReportError('research_items',{section,reason:!Array.isArray(value)?'type':value.length===0?'empty':'excess'});}
 export class ResearchReportError extends Error {
- constructor(readonly code:ResearchReportCode){super('['+code+'] '+messages[code]+' 未保存有效报告；费用预留保留，不自动重试。');}
+ constructor(readonly code:ResearchReportCode,context?:{section:string;reason:keyof typeof itemReasons}){const detail=code==='research_items'&&context&&Object.hasOwn(columns,context.section)&&Object.hasOwn(itemReasons,context.reason)?` 栏目「${columns[context.section]}」：${itemReasons[context.reason]}。`:'';super('['+code+'] '+messages[code]+detail+' 未保存有效报告；费用预留保留，不自动重试。');}
  get stage():'schema'|'evidence'|'validator'{return this.code==='research_validator'?'validator':/^research_(source|quote|original|url)/.test(this.code)?'evidence':'schema';}
 }

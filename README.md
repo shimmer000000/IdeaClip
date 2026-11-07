@@ -6,6 +6,8 @@
 
 ## 当前范围
 
+2026-11-08：用户新截图明确报告 `research_items`，至少一栏不是1～8条的数组；尚不能从旧响应确定具体栏目及数量。已加强空栏目提示与安全定位，并修复公开HTML解析时触发的CSP事件属性告警；保留严格Schema和逐字引用，不自动重试。详见 [CSP与栏目边界补充验收](docs/RESEARCH-CSP-ITEMS-VALIDATION.md)。
+
 首次真实DeepSeek调用已由用户批准并执行，但报告失败停在向导第6步。本地记录为validation、预留0.015054 USD、Token未知；用户控制台对应时段有1次请求及Token统计。已修复通用错误分类和usage在校验失败时丢失的问题，保持Schema/逐字证据/预算门禁；537项单元两轮、19项Chrome Mock专项与构建通过，1项独占端口测试跳过。旧响应未保留，具体真实失败原因和报告无法从旧通用记录恢复；本轮没有再次付费调用。详见 [首次DeepSeek失败诊断](docs/DEEPSEEK-FIRST-CALL-DIAGNOSTICS.md)。
 
 商业研究本轮已停在DeepSeek最终确认页：来源/旧任务重开保留，定价卡片提取修复后真实复测已保存年付价格与计费周期；月付价未采集。Brave控制台本月1次请求、费用显示0.00 USD（精确扣费未确认）。向导十二栏预览为deepseek-flash、输入估算上限17410、输出8192、本次估算0.015054 USD、预留前剩余AI预算0.100000 USD；未勾选确认、未调用DeepSeek。修复通过508项单元及18项Chrome Mock专项/构建，1项独占端口测试跳过。详见 [商业研究验收记录](docs/COMMERCIAL-RESEARCH-VALIDATION.md)。

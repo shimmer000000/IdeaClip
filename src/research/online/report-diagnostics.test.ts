@@ -4,6 +4,7 @@ import { AIEngine } from '../../ai/engine';
 import { chatTransport } from '../../ai/transport';
 import { DEFAULT_CONFIG,PROVIDERS } from '../../ai/config';
 import * as validator from '../../ai/generated/research.js';
+import { itemReportError } from './report-errors';
 import { emptyDraft,currentDraft } from '../model';
 import { beginWorkflow,saveInvestigation,reviewEvidence } from '../workflow/repository';
 import { OPPORTUNITY_SECTIONS,sourceDigest,validateSource,validateResearchReport,type ResearchSource } from './model';
@@ -57,6 +58,13 @@ it('有效中文/emoji/原语言逐字证据通过十二栏Schema并保存，重
  const result=await engine.run(p.id);expect(result.saved).toBe(true);expect((await database.researchReports.get(p.id))?.report.schemaVersion).toBe(2);expect((await database.researchReports.get(p.id))?.report.sections.evidence[0].quote).toBe(source.content);expect((await database.aiUsage.get(p.id))).toMatchObject({status:'succeeded',inputTokens:1234,outputTokens:456,reportSaved:true});await engine.save(result.analysis);expect(await database.researchReports.count()).toBe(1);expect(fetchMock).toHaveBeenCalledTimes(1);
 });
 it('中文作者主张可配原语言quote，但不能把中文翻译冒充original',()=>{const r=report();r.sections.evidence[0]={kind:'claim',text:'作者声明按年计费，尚未核实需求。',sourceId:source.id,quote:'Per user, per month, billed annually.'};expect(validateResearchReport(r,[source],2).schemaVersion).toBe(2);});
+it.each([['empty',[], '空数组（0 条）'],['excess',Array.from({length:9},()=>({})), '超过 8 条'],['type',{private:'private-body'},'不是数组']] as const)('栏目边界 %s 显示固定栏目及安全原因，保留费用且只发送一次',async(_case,items,message)=>{
+ const value=report();(value.sections as Record<string,unknown>).counter=items;const {engine,fetchMock}=setup(value);const p=await engine.previewResearch('study',[source.id],'study');
+ expect(p.systemPrompt).toContain('counter正确示例');expect(p.systemPrompt).toContain('所有栏目均须为数组');
+ const error=await engine.run(p.id).catch(e=>e);expect(error.code).toBe('research_items');expect(error.message).toContain('栏目「反面证据」');expect(error.message).toContain(message);expect(error.message).not.toContain('private-body');
+ expect(await database.researchReports.count()).toBe(0);expect((await database.aiUsage.get(p.id))?.reservedMicros).toBe(p.costMicros);expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+it('错误定位拒绝未知字段名和原型键，不回显模型字段',()=>{for(const section of ['private-model-field','__proto__','constructor'])expect(itemReportError(section,[]).message).not.toContain(section);});
 it('模型内层JSON无效与外层响应JSON无效分别记录，不泄露原始正文',async()=>{
  for(const outer of [false,true]){const {engine,fetchMock}=setup('private-invalid-json',outer?async()=>new Response('private-provider-body'):undefined);const p=await engine.previewResearch('study',[source.id],'study');await expect(engine.run(p.id)).rejects.toMatchObject({code:outer?'response_json':'research_json'});const row=await database.aiUsage.get(p.id);expect(row?.errorStage).toBe(outer?'transport':'json');if(!outer)expect(row?.inputTokens).toBe(1234);expect(JSON.stringify(row)).not.toContain('private-');expect(fetchMock).toHaveBeenCalledTimes(1);}
 });
