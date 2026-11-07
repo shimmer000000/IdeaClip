@@ -249,7 +249,9 @@
 
 - [x] 用户重开后两条来源及成功/失败历史保留，Not Found明确排除为定价证据；仅1次公开read、不重复Brave搜索。
 - [x] 定位原Readability提取只剩FAQ的问题；对现有静态定价卡片解析作最小修复，保留文章路径、净化和长度限制，不改旧来源/数据库/预算/SSH。508项单元、构建及18项Chrome Mock专项通过（独占8788的1项单元跳过）。
-- [ ] 修复后真实价格卡片、Brave控制台账单与十二栏DeepSeek最终费用预览仍待完成；没有真实DeepSeek调用。详见 [商业研究进行中记录](COMMERCIAL-RESEARCH-VALIDATION.md)。
+- [x] 修复后22:47:00官方来源已保存Sync/Publish年付价、Catalyst/Commercial金额与计费周期；只选择该正文进入向导。Brave控制台本月1次请求、费用显示0.00 USD，未据此认定精确扣费。
+- [x] 十二栏DeepSeek最终确认截图已取得：deepseek-flash、输入上界17410、输出8192、估算0.015054 USD、预留前剩余0.100000 USD，停止在未勾选/未发送状态。详见 [商业研究验收记录](COMMERCIAL-RESEARCH-VALIDATION.md)。
+- [ ] DeepSeek真实调用及报告、Brave高精度费用/月付价/Edge等仍未验收；没有新付费调用授权。
 
 - IC-006：全项目自动化与跨浏览器验收（IC-001 的必要测试已单独执行）。
 
