@@ -12,6 +12,7 @@
 - API Key 默认只保存在 `chrome.storage.session`，长期 `storage.local` 保存须明确风险确认；仅 TRUSTED_CONTEXTS 可读取。不得写入 Dexie、VITE_*、日志、报告、普通 ZIP 或 Git。自定义端点需明示 Key 接收方，固定完整 URL，禁跟随重定向、cookie 和 referrer。
 - 使用可替换的 `AITransport` 接口；自定义兼容 API 可对接用户自有安全代理，不宣称本项目提供代理后端。HTTPS 与本机 HTTP 作为可选域名授权，不授予持久全站访问；只有配置端点可发送 AI 数据。
 - 预算统一 USD/UTC 日，使用整数微美元和事务预留；并发请求通过 Web Locks 排队。此为本浏览器估算限制，不等同服务商硬账单上限。失败日志只记安全状态码和用量，不记录请求正文、凭据或服务商错误正文。
+- 模型完成返回后先记录有界数字usage，再校验报告；研究失败只记录固定安全码/阶段/响应取得及保存状态，不记录Ajv动态路径、模型字段名、正文或quote。旧validation不能回填为猜测原因，失败不退预留、不自动重试。original与quote严格相等，quote连续逐字匹配；不能通过Unicode/空白归一化放宽证据。有效报告本地保存失败仅重试save，不再次调用模型。
 - AI 输入是独立 user 数据，不能变成 system 指令；不提供工具调用。报告须通过构建时生成的 Ajv JSON Schema 和来源证据检查，按来源陈述（未核验）、推测、待验证假设区分，纯文本展示；无效或截断输出不得保存为成功报告。
 - 自动化 AI 测试只允许 Mock API。禁止真实付费调用；测试拦截非本机端点。OpenAI/DeepSeek 真实模型、原生域名权限弹窗和 Mock 结果分别报告。
 - 真实免费来源验收单独使用显式 opt-in 的 research-public.live.ts，仅准许三个预定 URL 各一次，不配置 Brave/AI Key，不读取用户配置。普通 test:e2e 不执行 .live.ts；live 产物独立写入被忽略的 test-results-live，不能与 Mock 运行共用输出目录。权限替身不等于原生授权通过。

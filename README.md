@@ -6,6 +6,8 @@
 
 ## 当前范围
 
+首次真实DeepSeek调用已由用户批准并执行，但报告失败停在向导第6步。本地记录为validation、预留0.015054 USD、Token未知；用户控制台对应时段有1次请求及Token统计。已修复通用错误分类和usage在校验失败时丢失的问题，保持Schema/逐字证据/预算门禁；537项单元两轮、19项Chrome Mock专项与构建通过，1项独占端口测试跳过。旧响应未保留，具体真实失败原因和报告无法从旧通用记录恢复；本轮没有再次付费调用。详见 [首次DeepSeek失败诊断](docs/DEEPSEEK-FIRST-CALL-DIAGNOSTICS.md)。
+
 商业研究本轮已停在DeepSeek最终确认页：来源/旧任务重开保留，定价卡片提取修复后真实复测已保存年付价格与计费周期；月付价未采集。Brave控制台本月1次请求、费用显示0.00 USD（精确扣费未确认）。向导十二栏预览为deepseek-flash、输入估算上限17410、输出8192、本次估算0.015054 USD、预留前剩余AI预算0.100000 USD；未勾选确认、未调用DeepSeek。修复通过508项单元及18项Chrome Mock专项/构建，1项独占端口测试跳过。详见 [商业研究验收记录](docs/COMMERCIAL-RESEARCH-VALIDATION.md)。
 
 2026-11-07最新实际验收：Windows自有SSH出口、研究服务及Chrome免费连接均通过；用户另行明确批准的1次Brave真实搜索成功，保存2条搜索摘要来源。第一条摘要包含Not Found，不能作为有效定价证据；尚未读取结果正文、核对Brave实际账单或调用DeepSeek。原失败任务及费用预留保留。本次为人工截图证据，不将搜索摘要等同于事实已核验。详见 [SSH出口最新验收进度](docs/SSH-EGRESS-VALIDATION.md#最新进度windows实际验收及单次brave搜索)；下文各阶段的“真实服务未验收”保留为历史范围说明。

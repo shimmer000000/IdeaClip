@@ -2,6 +2,7 @@ import validateOpportunity from '../../ai/generated/research.js';
 import { publicUrl } from '../model';
 import { digest } from '../../backup/zip';
 import type { Skill } from '../../skills/model';
+import { ResearchReportError } from './report-errors';
 export const TOPICS = { competitor:'竞争对手研究', business:'商业模式调查', pricing:'产品定价调查', github:'GitHub 项目调查', demand:'市场需求验证', custom:'自定义研究问题' };
 export interface ResearchConfig { id:'online'; version:string; enabled:boolean; endpoint:string; hosts:string[]; timeoutMs:number; priceUsd:number; dailyBudgetUsd:number; maxSearches:number; maxPages:number; maxText:number }
 export const DEFAULT_RESEARCH:ResearchConfig={id:'online',version:'',enabled:false,endpoint:'',hosts:[],timeoutMs:30000,priceUsd:0,dailyBudgetUsd:0.1,maxSearches:3,maxPages:5,maxText:20000};
@@ -53,18 +54,27 @@ export function validateRun(value:unknown):ResearchRun {
  return {id:uid(r.id),studyId:uid(r.studyId),createdAt:num(r.createdAt),updatedAt:num(r.updatedAt),question:txt(r.question,2000),topic:r.topic as ResearchRun['topic'],operations:ops,next:num(r.next,ops.length),state:r.state as ResearchRun['state'],reason:txt(r.reason,1000),revision:num(r.revision),...(r.imported===true?{imported:true}:{})};
 }
 export function researchSchema(ids:string[],version:1|2=1){const names=version===2?OPPORTUNITY_SECTIONS:REPORT_SECTIONS;const claim={type:'object',additionalProperties:false,required:['kind','text','sourceId','quote'],properties:{kind:{enum:['original','claim','inference','hypothesis']},text:{type:'string',minLength:1,maxLength:3000},sourceId:{enum:[null,...ids]},quote:{type:['string','null'],maxLength:1000}}};return {type:'object',additionalProperties:false,required:['schemaVersion','sections'],properties:{schemaVersion:{const:version},sections:{type:'object',additionalProperties:false,required:Object.keys(names),properties:Object.fromEntries(Object.keys(names).map(k=>[k,{type:'array',minItems:1,maxItems:8,items:claim}]))}}};}
-export function validateResearchReport(value:unknown,sources:ResearchSource[]):ResearchReport {
- const r=obj(value),sections=obj(r.sections);const names=r.schemaVersion===2?OPPORTUNITY_SECTIONS:REPORT_SECTIONS;if(r.schemaVersion===2&&!validateOpportunity(value))throw new Error('商业机会报告 Schema 无效。');if((r.schemaVersion!==1&&r.schemaVersion!==2)||Object.keys(r).length!==2||Object.keys(sections).length!==Object.keys(names).length||new Set(sources.map(s=>s.id)).size!==sources.length)throw new Error('研究报告 Schema 无效。');
+export function validateResearchReport(value:unknown,sources:ResearchSource[],expectedVersion?:1|2):ResearchReport {
+ const record=(v:unknown)=>{if(!v||typeof v!=='object'||Array.isArray(v))throw new ResearchReportError('research_shape');return v as Record<string,unknown>;};
+ const fields=(v:Record<string,unknown>,keys:string[])=>{if(Object.keys(v).length!==keys.length||keys.some(k=>!Object.hasOwn(v,k)))throw new ResearchReportError('research_fields');};
+ const textValue=(v:unknown,max:number)=>{try{return txt(v,max);}catch{throw new ResearchReportError('research_text');}};
+ const r=record(value);if((r.schemaVersion!==1&&r.schemaVersion!==2)||expectedVersion!==undefined&&r.schemaVersion!==expectedVersion)throw new ResearchReportError('research_version');
+ fields(r,['schemaVersion','sections']);const sections=record(r.sections),names=r.schemaVersion===2?OPPORTUNITY_SECTIONS:REPORT_SECTIONS;fields(sections,Object.keys(names));if(new Set(sources.map(s=>s.id)).size!==sources.length)throw new ResearchReportError('research_source');
  const urls=new Set(sources.map(s=>s.url));
- const out=Object.fromEntries(Object.keys(names).map(k=>[k,list(sections[k],8).map(v=>{
-   const c=obj(v);if(Object.keys(c).length!==4||!['kind','text','sourceId','quote'].every(k=>Object.hasOwn(c,k))||!['original','claim','inference','hypothesis'].includes(String(c.kind)))throw new Error('研究结论结构无效。');
-   const text=txt(c.text,3000);if(!text.trim())throw new Error('研究结论不能为空。');const sourceId=c.sourceId===null?null:uid(c.sourceId),quote=c.quote===null?null:txt(c.quote,1000);const source=sources.find(s=>s.id===sourceId);
-   if(sourceId===null?quote!==null||c.kind==='original'||c.kind==='claim':!source||!['snippet','readable','partial'].includes(source.status)||!quote?.trim()||!source.content.includes(quote))throw new Error('AI 引用来源 ID 或逐字证据不存在。');
-   if(c.kind==='original'&&text!==quote)throw new Error('来源原文必须与逐字摘录一致。');
-   for(const url of text.match(/https?:\/\/[^\s<>"'，。；）]+/gi)??[])if(!urls.has(new URL(url).href))throw new Error('AI 生成了未采集的来源链接。');
+ const out=Object.fromEntries(Object.keys(names).map(k=>{const items=sections[k];if(!Array.isArray(items)||items.length<1||items.length>8)throw new ResearchReportError('research_items');return [k,items.map(v=>{
+   const c=record(v);fields(c,['kind','text','sourceId','quote']);if(!['original','claim','inference','hypothesis'].includes(String(c.kind)))throw new ResearchReportError('research_kind');
+   const text=textValue(c.text,3000);if(!text.trim())throw new ResearchReportError('research_text');
+   if(c.sourceId!==null&&(typeof c.sourceId!=='string'||!c.sourceId.trim()||c.sourceId.length>500||/[\u0000-\u001f]/.test(c.sourceId)))throw new ResearchReportError('research_source');
+   const sourceId=c.sourceId as string|null,quote=c.quote===null?null:textValue(c.quote,1000);const source=sources.find(s=>s.id===sourceId);
+   if(sourceId===null?(quote!==null||c.kind==='original'||c.kind==='claim'):!source||!['snippet','readable','partial'].includes(source.status))throw new ResearchReportError('research_source');
+   if(sourceId!==null&&!quote?.trim())throw new ResearchReportError('research_quote_required');
+   if(source&&quote!==null&&!source.content.includes(quote))throw new ResearchReportError('research_quote_mismatch');
+   if(c.kind==='original'&&text!==quote)throw new ResearchReportError('research_original_mismatch');
+   for(const url of text.match(/https?:\/\/[^\s<>"'，。；）]+/gi)??[]){let href;try{href=new URL(url).href;}catch{throw new ResearchReportError('research_url');}if(!urls.has(href))throw new ResearchReportError('research_url');}
    return {kind:c.kind as ResearchClaim['kind'],text,sourceId,quote};
- })]));
- if(Object.values(out).some(a=>!a.length))throw new Error('报告栏目不能为空。');return {schemaVersion:r.schemaVersion as 1|2,sections:out as ResearchReport['sections']};
+ })];}));
+ try{if(r.schemaVersion===2&&!validateOpportunity(value))throw new ResearchReportError('research_fields');}catch(e){if(e instanceof ResearchReportError)throw e;throw new ResearchReportError('research_validator');}
+ return {schemaVersion:r.schemaVersion as 1|2,sections:out as ResearchReport['sections']};
 }
 const md=(s:string)=>s.replace(/[\\`*_{}\[\]<>()#!|~]/g,'\\$&');
 export function researchReportMarkdown(report:ResearchReport,sources:ResearchSource[],model:string,at:number){validateResearchReport(report,sources);return ['# 公开资料研究报告',`${md(model)} · ${new Date(at).toISOString()}`,'资料并非独立事实核验；搜索摘要不代表全文，结论仍需验证。',...Object.entries(reportSections(report)).map(([k,label])=>`## ${label}\n`+report.sections[k as keyof typeof REPORT_SECTIONS].map(c=>`${{original:'来源原文',claim:'作者主张',inference:'AI 推断',hypothesis:'未经验证的假设'}[c.kind]}：${md(c.text)}${c.sourceId?`\n来源 ID：${md(c.sourceId)}\n摘录：${md(c.quote??'')}`:''}`).join('\n\n')),'## 实际采集来源',...sources.map(s=>`${md(s.id)} · ${md(s.title)}\n${md(s.url)}\n${s.type}/${s.status} · 采集 ${new Date(s.collectedAt).toISOString()} · 公开时间 ${md(s.publishedAt??'未知')}\nSHA-256 ${s.hash}`)].join('\n\n');}

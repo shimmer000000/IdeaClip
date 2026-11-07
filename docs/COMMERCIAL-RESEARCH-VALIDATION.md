@@ -1,5 +1,7 @@
 # Obsidian真实商业研究验收（停在DeepSeek最终确认）
 
+后续更新：用户已另行批准并手动执行一次真实DeepSeek，发生通用validation失败。以下保留当时准备/停点证据；最新调用状态、只读截图证据、usage丢失与错误分类修复及尚不能确定的原因见 [首次真实DeepSeek失败诊断](DEEPSEEK-FIRST-CALL-DIAGNOSTICS.md)。不能继续将本文件的“未执行”历史描述作为当前状态。
+
 日期：2026-11-07；起始基线`114a1486f1f5240aee2506c948846875ba451a2f`。本记录与[此前SSH/单次Brave搜索验收](SSH-EGRESS-VALIDATION.md)连续，但不是新的Brave或DeepSeek付费授权。只记录公开样本与脱敏结果，不上传用户截图、研究记录ID、密钥、私人笔记或数据库。
 
 ## 重新打开后的保存证据
