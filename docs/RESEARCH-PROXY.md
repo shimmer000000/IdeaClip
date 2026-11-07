@@ -59,6 +59,22 @@ read/github 返回 URL 必须与确认的标准化 URL 完全一致，客户端�
 
 ## 免费健康检查与错误分类（IC-014）
 
+IC-016C增加免费分阶段诊断与精确错误码，旧错误码继续兼容。`health`仍不访问上游；新增操作仅供用户主动诊断：
+
+```json
+{"version":1,"operation":{"kind":"diagnose","mode":"tls"}}
+```
+
+`mode`仅允许`dns`、`tls`、`environment`。固定主机`api.search.brave.com`，不接受URL/搜索词或DNS覆盖；TLS模式先校验全部DNS地址，再只对第一个已校验IP做TLS证书握手，不发送任何HTTP请求、Brave Key或搜索词。只携带浏览器→本地代理的独立鉴权Token，不转发上游。诊断不进入搜索分支、不增加进程搜索计数/本地预算，不改变开关。不能把认证/额度显示成通过。
+
+响应严格为`{version:1,free:true,searchAuthentication:"untested",searchQuota:"unverified",stages:[{stage,code,elapsedMs}],environment:{node,httpProxyPresent,httpsProxyPresent,nodeEnvProxy,transport:"direct-pinned-https"}}`；不输出地址、代理URL、环境变量值或原始异常。扩展再次按白名单重建报告。Windows单独诊断入口还输出系统代理启用/8788端口空闲布尔值，不输出PAC地址或代理凭据。主动文件导出只含这些字段，不包括笔记、Key或请求正文。
+
+`health.diagnostics`可只读最近20条安全阶段；内存环形日志最多30条、重启即消失，只有`stage/code/elapsedMs`。不会打印或写请求日志；更新/重启不改扩展预算。具体错误码、当前DNS证据和安全复测步骤见 [IC-016C](IC-016C-DIAGNOSTICS.md)。
+
+超时仍为生产代理20秒、默认客户端30秒；浏览器免费TLS诊断等待25秒、Windows独立握手总限10秒。代理在DNS/建连/握手/HTTP阶段超时返回`UPSTREAM_TIMEOUT`和已知阶段；客户端自身到期为`CLIENT_TIMEOUT`；用户/权限/配置停止为`REQUEST_CANCELLED`。客户端配置短于20秒时可能先取消，只能标客户端结果未知，不推断认证失败。不自动延长、重试或轮换IP。
+
+搜索成功响应可增加`searchStatus`：有合法结果为`OK`、Brave原始0条为`SEARCH_RESULT_EMPTY`、有结果但URL/白名单过滤后0条为`SEARCH_RESULT_FILTERED`。后两者是有效空搜索而非API失败，保存完成历史及明确状态，不自动抓取/扩域/重试。非法JSON/结构为失败，不能以空数组冒充成功。旧代理不提供此字段时保留“为空或过滤后无结果”的未区分提示。
+
 主动POST到同一完整代理端点，沿用Origin和Bearer认证，不更换路径、不申请新权限、不改变联网开关：
 
 ```json

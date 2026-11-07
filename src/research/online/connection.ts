@@ -2,6 +2,7 @@ import { hasPermission } from '../../ai/config';
 import { researchCredential } from './config';
 import { validateResearchConfig, type ResearchConfig } from './model';
 import { proxyJSON } from './adapter';
+import { ResearchFailure } from './errors';
 export type ConnectionState='unconfigured'|'stopped'|'connected'|'searchMissing'|'permission'|'failed'|'budget';
 export const CONNECTION_LABELS:Record<ConnectionState,string>={unconfigured:'代理未配置',stopped:'代理未启动或本地连接不可达',connected:'代理连接正常',searchMissing:'缺少搜索服务配置',permission:'域名权限未批准',failed:'请求失败',budget:'预算不足'};
 export interface ConnectionResult {state:ConnectionState;message:string;checkedAt?:number;health?:{searchConfigured:boolean;hosts:string[];searchRequests:number;searchLimit:number}}
@@ -23,6 +24,6 @@ export async function checkResearchConnection(config:ResearchConfig,signal:Abort
     if(typeof search.configured!=='boolean'||search.verified!==false||!Array.isArray(r.allowedHosts)||r.allowedHosts.length>20||r.allowedHosts.some(h=>typeof h!=='string'||h.length>253)||!usage||!Number.isSafeInteger(usage.searchRequests)||!Number.isSafeInteger(usage.searchLimit)||Number(usage.searchRequests)<0||Number(usage.searchLimit)<0)throw new Error('protocol');
     const hosts=r.allowedHosts as string[];const mismatch=c.hosts.filter(h=>!hosts.includes(h));
     return {state:!search.configured?'searchMissing':'connected',checkedAt:Date.now(),health:{searchConfigured:search.configured,hosts,searchRequests:Number(usage.searchRequests),searchLimit:Number(usage.searchLimit)},message:'本地代理可达；未请求上游，Brave凭据、额度和真实可用性尚未验证。'+(mismatch.length?' 本次来源白名单包含服务端未授权域名，请在两端保持一致。':'')};
-  }catch(e){if(signal.aborted)return {state:'failed',message:'连接检查已取消。'};const local=['127.0.0.1','localhost'].includes(new URL(c.endpoint).hostname);return {state:e instanceof TypeError&&local?'stopped':'failed',message:'连接检查未通过：请核对服务是否启动、端点和会话密钥；旧代理可能不支持健康协议。没有发起搜索或AI请求。'};}
+  }catch(e){if(signal.aborted)return {state:'failed',message:'连接检查已取消。'};const local=['127.0.0.1','localhost'].includes(new URL(c.endpoint).hostname);return {state:(e instanceof TypeError||e instanceof ResearchFailure&&e.code==='PROXY_UNREACHABLE')&&local?'stopped':'failed',message:'连接检查未通过：'+(e instanceof ResearchFailure?e.message:'请核对服务是否启动、端点和会话密钥；旧代理可能不支持健康协议。')+'没有发起搜索或AI请求。'};}
   finally{clearTimeout(timer);signal.removeEventListener('abort',cancel);}
 }

@@ -1,4 +1,4 @@
-import { proxyFailure } from './errors';
+import { proxyFailure, ResearchFailure } from './errors';
 import { Readability } from '@mozilla/readability';
 import { obj, txt, list, researchUrl, type Operation, type ResearchConfig } from './model';
 export interface SourceData {url:string;title:string;content:string;publishedAt:string|null;status:'snippet'|'readable'|'partial'|'unreadable';type:'search'|'webpage'|'github';reason:string}
@@ -23,13 +23,15 @@ export function parseProxyResponse(value:unknown,op:Operation,c:ResearchConfig):
 }
 function date(v:unknown){if(v===null||v===undefined||v==='')return null;const s=txt(v,100);if(!Number.isFinite(Date.parse(s)))throw new Error('来源时间无效。');return s;}
 export async function proxyJSON(fetcher:typeof fetch,c:ResearchConfig,key:string,payload:unknown,signal:AbortSignal,maxBytes=2*1024*1024){
- const response=await fetcher(c.endpoint,{method:'POST',redirect:'error',credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store',signal,headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},body:JSON.stringify(payload)});
- if(response.redirected||!response.headers.get('content-type')?.includes('application/json'))throw new Error('研究代理响应格式无效，未自动重试。');
- if(!response.body)throw new Error('研究响应为空。');const reader=response.body.getReader();const chunks:Uint8Array[]=[];let size=0;
+ let response:Response;try{response=await fetcher(c.endpoint,{method:'POST',redirect:'error',credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store',signal,headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},body:JSON.stringify(payload)});}catch{throw new ResearchFailure(signal.aborted?'REQUEST_CANCELLED':'PROXY_UNREACHABLE');}
+ if(response.status===401||response.status===403){await response.body?.cancel().catch(()=>{});throw new ResearchFailure('PROXY_AUTH_FAILED');}
+ if(response.redirected||!response.headers.get('content-type')?.includes('application/json'))throw new ResearchFailure('SEARCH_RESPONSE_INVALID');
+ if(!response.body)throw new ResearchFailure('SEARCH_RESPONSE_INVALID');const reader=response.body.getReader();const chunks:Uint8Array[]=[];let size=0;
  try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>maxBytes)throw new Error('研究响应超过安全上限。');chunks.push(value);}}finally{await reader.cancel().catch(()=>{});}
  const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
- const text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);if(key&&text.includes(key))throw new Error('研究响应包含凭据，已丢弃。');const raw=obj(JSON.parse(text));if(!response.ok)throw proxyFailure(raw.error);return raw;
+ let text:string;try{text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch{throw new ResearchFailure('SEARCH_RESPONSE_INVALID');}if(key&&text.includes(key))throw new Error('研究响应包含凭据，已丢弃。');let raw:Record<string,unknown>;try{raw=obj(JSON.parse(text));}catch{throw new ResearchFailure('SEARCH_RESPONSE_INVALID');}if(!response.ok)throw proxyFailure(raw.error,raw.diagnostic);return raw;
 }
 export function proxyAdapter(fetcher:typeof fetch=fetch):ResearchAdapter{return {async execute(op,c,key,signal){
- return parseProxyResponse(await proxyJSON(fetcher,c,key,{version:1,operation:op,allowHosts:c.hosts,maxText:c.maxText},signal),op,c);
+ const raw=await proxyJSON(fetcher,c,key,{version:1,operation:op,allowHosts:c.hosts,maxText:c.maxText},signal);
+ try{const results=parseProxyResponse(raw,op,c);return Object.assign(results,{searchStatus:raw.searchStatus==='SEARCH_RESULT_EMPTY'||raw.searchStatus==='SEARCH_RESULT_FILTERED'?raw.searchStatus:undefined});}catch{throw new ResearchFailure('SEARCH_RESPONSE_INVALID');}
 }};}

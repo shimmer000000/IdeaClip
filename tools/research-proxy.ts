@@ -1,7 +1,7 @@
 // Optional self-hosted reference proxy. Never started by the extension/build/tests.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { request } from 'node:https';
-import { lookup as dnsLookup } from 'node:dns/promises';
+import { NetworkFailure, lookupPublic, connectionFailure, failure, safeEvent, diagnoseBrave, type Stage, type Event } from './research-diagnostics.ts';
 import { BlockList, isIP } from 'node:net';
 import { timingSafeEqual } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
@@ -17,26 +17,27 @@ export function safeSourceUrl(value:unknown,hosts:string[]){
 }
 type Address={address:string;family:number};
 export interface SafeResponse {status:number;headers:Record<string,string|string[]|undefined>;body:string}
-type Connector=(url:URL,addresses:Address[],headers:Record<string,string>,signal:AbortSignal)=>Promise<SafeResponse>;
-const connect:Connector=(url,addresses,headers,signal)=>new Promise((resolve,reject)=>{
+type Connector=(url:URL,addresses:Address[],headers:Record<string,string>,signal:AbortSignal,observe?:(event:Event)=>void)=>Promise<SafeResponse>;
+export const connect:Connector=(url,addresses,headers,signal,observe)=>new Promise((resolve,reject)=>{
+ const start=Date.now();let stage:Stage='tcp';
  const a=addresses[0];const req=request(url,{agent:false,signal,servername:url.hostname,rejectUnauthorized:true,maxHeaderSize:16384,
    lookup:(_hostname,options,callback)=>{if(options.all)callback(null,[{address:a.address,family:a.family as 4|6}]);else callback(null,a.address,a.family);},
    headers:{'User-Agent':'IdeaClip-Public-Research/1','Accept-Encoding':'identity',...headers}},res=>{
-   const chunks:Buffer[]=[];let size=0;
+   stage='http';const chunks:Buffer[]=[];let size=0;
    if((res.statusCode??0)>=300&&(res.statusCode??0)<400||res.headers['content-encoding']&&res.headers['content-encoding']!=='identity'){res.destroy();reject(new Error('redirect-or-encoding'));return;}
    res.on('data',(chunk:Buffer)=>{size+=chunk.length;if(size>2*1024*1024){res.destroy();reject(new Error('response-limit'));}else chunks.push(chunk);});
-   res.on('error',reject);res.on('end',()=>resolve({status:res.statusCode??0,headers:res.headers,body:Buffer.concat(chunks).toString('utf8')}));
- });req.on('error',reject);req.end();
+   res.on('error',e=>reject(connectionFailure(e,'http',start,signal.aborted)));res.on('end',()=>resolve({status:res.statusCode??0,headers:res.headers,body:Buffer.concat(chunks).toString('utf8')}));
+ });req.on('socket',socket=>{socket.once('connect',()=>{observe?.({stage:'tcp',code:'OK',elapsedMs:Date.now()-start});stage='tls';});socket.once('secureConnect',()=>{observe?.({stage:'tls',code:'OK',elapsedMs:Date.now()-start});stage='http';});});
+ req.on('error',e=>reject(e instanceof NetworkFailure?e:connectionFailure(e,stage,start,signal.aborted)));req.end();
 });
-export async function secureGet(url:URL,headers:Record<string,string>,signal:AbortSignal,options:{lookup?:(host:string)=>Promise<Address[]>;connect?:Connector}={}):Promise<SafeResponse>{
+export async function secureGet(url:URL,headers:Record<string,string>,signal:AbortSignal,options:{lookup?:(host:string)=>Promise<Address[]>;connect?:Connector;observe?:(event:Event)=>void}={}):Promise<SafeResponse>{
  if(url.protocol!=='https:'||url.username||url.password||url.port&&url.port!=='443'||isIP(url.hostname)||!url.hostname.includes('.')||url.hostname.endsWith('.'))throw new Error('unsafe-endpoint');
- signal.throwIfAborted();const lookup=options.lookup??(h=>dnsLookup(h,{all:true,verbatim:true}));
- const addresses=await new Promise<Address[]>((resolve,reject)=>{const abort=()=>reject(new Error('cancelled'));signal.addEventListener('abort',abort,{once:true});lookup(url.hostname).then(resolve,reject).finally(()=>signal.removeEventListener('abort',abort));});
- signal.throwIfAborted();if(!addresses.length||addresses.length>32||addresses.some(a=>!publicAddress(a.address)||isIP(a.address)!==a.family))throw new Error('dns-not-public');
- const response=await(options.connect??connect)(url,addresses,headers,signal);signal.throwIfAborted();
+ const addresses=await lookupPublic(url.hostname,signal,publicAddress,options.lookup);
+ options.observe?.({stage:'dns',code:'OK',elapsedMs:0});options.observe?.({stage:'safety',code:'OK',elapsedMs:0});
+ const response=await(options.connect??connect)(url,addresses,headers,signal,options.observe);signal.throwIfAborted();
  if(response.status>=300&&response.status<400)throw new Error('redirect');return response;
 }
-interface ProxyOptions { token:string; origins:string[]; hosts:string[]; braveKey?:string; maxDailySearches?:number; get?:typeof secureGet }
+interface ProxyOptions { token:string; origins:string[]; hosts:string[]; braveKey?:string; maxDailySearches?:number; get?:typeof secureGet; diagnose?:typeof diagnoseBrave; diagnostic?:(event:{stage:Stage;code:string;elapsedMs:number})=>void; timeoutMs?:number }
 const object=(v:unknown)=>{if(!v||typeof v!=='object'||Array.isArray(v))throw new Error('body');return v as Record<string,unknown>;};
 const str=(v:unknown,max:number)=>{if(typeof v!=='string'||v.length>max)throw new Error('text');return v;};
 function equal(a:string,b:string){const x=Buffer.from(a),y=Buffer.from(b);return x.length===y.length&&timingSafeEqual(x,y);}
@@ -46,23 +47,30 @@ export function createResearchProxy(options:ProxyOptions){
  if(!/^[\x21-\x7e]{16,1000}$/.test(options.token)||!options.origins.length||options.origins.some(o=>!/^chrome-extension:\/\/[a-p]{32}$/.test(o)))throw new Error('Configure a private token and exact extension origins.');
  const hosts=[...new Set(options.hosts.map(h=>h.toLowerCase().trim()))];if(!hosts.length||hosts.length>20||hosts.some(h=>!h.includes('.')||isIP(h)||!/^[a-z0-9.-]+$/.test(h)||/(^|\.)(localhost|local|internal|arpa|onion|test|invalid)$/.test(h)))throw new Error('Configure public source host allowlist.');
  if(options.braveKey&&!/^[\x21-\x7e]{8,1000}$/.test(options.braveKey))throw new Error('Invalid search configuration.');
- const get=options.get??secureGet;let day='',searches=0;
+ let day='',searches=0;const recent:{stage:Stage;code:string;elapsedMs:number}[]=[];const log=(stage:Stage,code:string,start:number)=>{const event={stage,code,elapsedMs:Math.min(120000,Math.max(0,Date.now()-start))};recent.push(event);if(recent.length>30)recent.shift();try{options.diagnostic?.({...event});}catch{/* Diagnostics must never break a request. */}};
  const server=createServer(async(req,res)=>{
   const send=(status:number,value:unknown)=>{const raw=JSON.stringify(value);if([options.token,options.braveKey].some(k=>k&&raw.includes(k)))json(res,400,{error:'credential-in-response'});else json(res,status,value);};
-  const origin=req.headers.origin??'';if(!options.origins.includes(origin)){send(403,{error:'origin-denied'});return;}
+  const start=Date.now();const get=options.get??((u:URL,h:Record<string,string>,s:AbortSignal)=>secureGet(u,h,s,{observe:e=>log(e.stage,e.code,start)}));const origin=req.headers.origin??'';if(!options.origins.includes(origin)){log('auth','PROXY_AUTH_FAILED',start);send(403,{error:'PROXY_AUTH_FAILED'});return;}
   res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin');
   if(req.method==='OPTIONS'){res.writeHead(204,{'Access-Control-Allow-Methods':'POST','Access-Control-Allow-Headers':'Content-Type, Authorization'});res.end();return;}
-  if(req.method!=='POST'||req.url!=='/research'||!equal(req.headers.authorization??'',`Bearer ${options.token}`)){send(403,{error:'authorization-denied'});return;}
-  const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),20000);res.on('close',()=>{if(!res.writableEnded)controller.abort();});
+  if(req.method!=='POST'||req.url!=='/research'||!equal(req.headers.authorization??'',`Bearer ${options.token}`)){log('auth','PROXY_AUTH_FAILED',start);send(403,{error:'PROXY_AUTH_FAILED'});return;}
+  log('proxy','OK',start);log('auth','OK',start);let cancelled=false;const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),Math.max(10,Math.min(options.timeoutMs??20000,20000)));res.on('close',()=>{if(!res.writableEnded){cancelled=true;controller.abort();}});
   try{
    const r=await body(req),op=object(r.operation);if(r.version!==1)throw new Error('version');
-   if(op.kind==='health'){send(200,{version:1,service:'IdeaClipResearchProxy',noUpstreamRequests:true,search:{provider:'brave',configured:!!options.braveKey,verified:false},allowedHosts:hosts,usage:{day:new Date().toISOString().slice(0,10),searchRequests:day===new Date().toISOString().slice(0,10)?searches:0,searchLimit:options.maxDailySearches??50}});return;}
+   if(op.kind==='health'){send(200,{version:1,service:'IdeaClipResearchProxy',noUpstreamRequests:true,search:{provider:'brave',configured:!!options.braveKey,verified:false},allowedHosts:hosts,usage:{day:new Date().toISOString().slice(0,10),searchRequests:day===new Date().toISOString().slice(0,10)?searches:0,searchLimit:options.maxDailySearches??50},diagnostics:recent.slice(-20)});return;}
+   if(op.kind==='diagnose'){
+    if(!['dns','tls','environment'].includes(String(op.mode)))throw new Error('diagnostic-mode');
+    const result=await(options.diagnose??diagnoseBrave)(op.mode as 'dns'|'tls'|'environment',publicAddress,controller.signal);
+    for(const event of result.stages)log(event.stage,event.code,start);
+    send(200,result);return;
+   }
    if(r.version!==1||!Array.isArray(r.allowHosts)||r.allowHosts.length>20||!r.allowHosts.length||r.allowHosts.some(h=>typeof h!=='string'||!hosts.includes(h)))throw new Error('allowlist');const allowed=r.allowHosts as string[];
    const value=str(op.value,4000);if(op.kind==='search'){
     if(!options.braveKey){send(400,{error:'search_not_configured'});return;}if(!value.trim()||value.length>500)throw new Error('search-config');const today=new Date().toISOString().slice(0,10);if(today!==day){day=today;searches=0;}if(searches>=(options.maxDailySearches??50)){send(429,{error:'search_budget'});return;}searches++;
-    const url=new URL('https://api.search.brave.com/res/v1/web/search');url.searchParams.set('q',value+' ('+allowed.map(h=>'site:'+h).join(' OR ')+')');url.searchParams.set('count','5');url.searchParams.set('safesearch','strict');
-    const response=await get(url,{'Accept':'application/json','X-Subscription-Token':options.braveKey},controller.signal);if(response.status!==200){send(400,{error:[401,403].includes(response.status)?'search_auth':[402,429].includes(response.status)?'search_quota':response.status>=500?'search_unavailable':'search_invalid'});return;}const payload=object(JSON.parse(response.body));const web=object(payload.web??{});const results=Array.isArray(web.results)?web.results.slice(0,5):[];
-    const safe=results.flatMap(item=>{try{const x=object(item),u=safeSourceUrl(x.url,allowed);return [{url:u.href,title:str(x.title,1000),snippet:str(x.description??'',30000),publishedAt:null}];}catch{return [];}});send(200,{version:1,results:safe});return;
+    log('search','STARTED',start);const url=new URL('https://api.search.brave.com/res/v1/web/search');url.searchParams.set('q',value+' ('+allowed.map(h=>'site:'+h).join(' OR ')+')');url.searchParams.set('count','5');url.searchParams.set('safesearch','strict');
+    const response=await get(url,{'Accept':'application/json','X-Subscription-Token':options.braveKey},controller.signal);if(response.status!==200){const code=[401,403].includes(response.status)?'SEARCH_AUTH_FAILED':[402,429].includes(response.status)?'SEARCH_QUOTA_EXCEEDED':'SEARCH_HTTP_ERROR';log('http',code,start);send(400,{error:code});return;}
+    let results:unknown[];try{const payload=object(JSON.parse(response.body));const web=object(payload.web??{});if(web.results!==undefined&&!Array.isArray(web.results))throw new Error('results');results=Array.isArray(web.results)?web.results.slice(0,5):[];}catch{throw failure('SEARCH_RESPONSE_INVALID','parse',start);}
+    const safe=results.flatMap(item=>{try{const x=object(item),u=safeSourceUrl(x.url,allowed);return [{url:u.href,title:str(x.title,1000),snippet:str(x.description??'',30000),publishedAt:null}];}catch{return [];}});const status=!results.length?'SEARCH_RESULT_EMPTY':!safe.length?'SEARCH_RESULT_FILTERED':'OK';log('parse',status,start);send(200,{version:1,results:safe,searchStatus:status});return;
    }
    const source=safeSourceUrl(value,allowed);
    if(op.kind==='github'){
@@ -80,7 +88,7 @@ export function createResearchProxy(options:ProxyOptions){
    const title=/<title[^>]*>([\s\S]{0,1000}?)<\/title>/i.exec(response.body)?.[1].replace(/<[^>]*>/g,'').trim()||source.hostname;
    const meta=(response.body.match(/<meta\b[^>]{0,2000}>/gi)??[]).slice(0,200).find(tag=>/(?:property|name)=["'](?:article:published_time|datePublished|pubdate)["']/i.test(tag));const date=meta?/content=["']([^"']+)["']/i.exec(meta)?.[1]:null;const publishedAt=date&&Number.isFinite(Date.parse(date))?new Date(date).toISOString():null;
    send(200,{version:1,url:source.href,title,status:'readable',...(contentType.startsWith('text/html')?{html:response.body}:{text:response.body.slice(0,30000),truncated:response.body.length>30000}),publishedAt});
-  }catch{send(400,{error:controller.signal.aborted?'cancelled-or-timeout':'request-rejected'});}finally{clearTimeout(timer);}
+  }catch(e){const f=cancelled?failure('REQUEST_CANCELLED','client',start):e instanceof NetworkFailure?e:failure(controller.signal.aborted?'UPSTREAM_TIMEOUT':'UNKNOWN',controller.signal.aborted?'http':'proxy',start);log(f.stage,f.code,start);send(400,{error:f.code,diagnostic:safeEvent(f)});}finally{clearTimeout(timer);}
  });server.requestTimeout=25000;server.headersTimeout=10000;server.maxRequestsPerSocket=20;return server;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){

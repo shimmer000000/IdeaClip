@@ -43,6 +43,28 @@ function Get-IdeaClipHealth($Config) {
         } finally { $response.Dispose() }
     } catch { throw '本地健康检查失败。未调用搜索或AI；请核对服务、端口和配置。' } finally { $client.Dispose() }
 }
+function Get-IdeaClipNetworkDiagnostic([string]$Mode) {
+    if ($Mode -notin @('dns','tls','environment')) { throw 'UNKNOWN：诊断模式无效。' }
+    $node = Get-IdeaClipNode
+    $info = [Diagnostics.ProcessStartInfo]::new(); $info.FileName = $node
+    $entry = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../tools/research-network-check.ts'))
+    $info.Arguments = '"' + $entry + '" ' + $Mode
+    $info.UseShellExecute = $false; $info.CreateNoWindow = $true; $info.RedirectStandardOutput = $true; $info.RedirectStandardError = $true
+    foreach ($name in @('BRAVE_SEARCH_API_KEY','IDEACLIP_RESEARCH_PROXY_TOKEN')) { $info.EnvironmentVariables.Remove($name) }
+    $child = [Diagnostics.Process]::new(); $child.StartInfo = $info
+    try {
+        [void]$child.Start(); $child.BeginErrorReadLine(); $output = $child.StandardOutput.ReadToEndAsync()
+        if (-not $child.WaitForExit(13000)) { $child.Kill(); throw 'UPSTREAM_TIMEOUT：免费诊断超时。' }
+        $raw = $output.GetAwaiter().GetResult()
+        if ($child.ExitCode -ne 0 -or $raw.Length -gt 16384) { throw 'UNKNOWN：无法生成免费诊断。' }
+        $r = $raw | ConvertFrom-Json
+        if ($r.free -ne $true -or $r.searchAuthentication -ne 'untested' -or $r.searchQuota -ne 'unverified') { throw 'UNKNOWN：诊断协议无效。' }
+        # System proxy values/PAC URL may contain secrets: export only presence booleans.
+        $system = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' -ErrorAction SilentlyContinue
+        $enabled = $false; if ($system -and $system.PSObject.Properties['ProxyEnable']) { $enabled = [bool]$system.ProxyEnable }
+        return @{ version = 1; free = $true; searchAuthentication = 'untested'; searchQuota = 'unverified'; stages = $r.stages; environment = $r.environment; systemProxyEnabled = $enabled; port8788Free = (Test-IdeaClipPort) }
+    } finally { $child.Dispose() }
+}
 function Stop-IdeaClipService($Child) {
     if ($null -eq $Child) { return }
     try {
@@ -78,7 +100,7 @@ if ($LibraryOnly) { return }
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [Windows.Forms.Application]::EnableVisualStyles()
-$form = [Windows.Forms.Form]::new(); $form.Text = 'IdeaClip 本地研究服务'; $form.Width = 660; $form.Height = 660; $form.StartPosition = 'CenterScreen'
+$form = [Windows.Forms.Form]::new(); $form.Text = 'IdeaClip 本地研究服务'; $form.Width = 700; $form.Height = 820; $form.StartPosition = 'CenterScreen'
 $layout = [Windows.Forms.FlowLayoutPanel]::new(); $layout.Dock = 'Fill'; $layout.FlowDirection = 'TopDown'; $layout.WrapContents = $false; $layout.AutoScroll = $true; $layout.Padding = [Windows.Forms.Padding]::new(16); $form.Controls.Add($layout)
 function Add-Label([string]$Text) { $label = [Windows.Forms.Label]::new(); $label.Text = $Text; $label.Width = 590; $label.AutoSize = $false; $label.Height = 38; $layout.Controls.Add($label) }
 function Add-Input([bool]$Secret = $false) { $box = [Windows.Forms.TextBox]::new(); $box.Width = 590; $box.UseSystemPasswordChar = $Secret; $box.MaxLength = 1000; $layout.Controls.Add($box); return $box }
@@ -93,9 +115,25 @@ $copy.Add_Click({ try { [Windows.Forms.Clipboard]::SetText($token.Text); $script
 $clipTimer.Add_Tick({ try { if ([Windows.Forms.Clipboard]::GetText() -eq $script:copied) { [Windows.Forms.Clipboard]::Clear() } } catch {} finally { $script:copied = ''; $clipTimer.Stop() } })
 Add-Label 'Brave Search API Key（可留空；健康检查不会验证账户或产生搜索费用）'; $brave = Add-Input $true
 $start = [Windows.Forms.Button]::new(); $start.Text = '启动本地研究服务'; $start.Width = 250; $layout.Controls.Add($start)
-$health = [Windows.Forms.Button]::new(); $health.Text = '检查本地连接（免费）'; $health.Width = 250; $health.Enabled = $false; $layout.Controls.Add($health)
+$health = [Windows.Forms.Button]::new(); $health.Text = '检查本地代理（免费）'; $health.Width = 250; $health.Enabled = $false; $layout.Controls.Add($health)
 $stop = [Windows.Forms.Button]::new(); $stop.Text = '安全停止服务'; $stop.Width = 250; $stop.Enabled = $false; $layout.Controls.Add($stop)
-$status = [Windows.Forms.Label]::new(); $status.Text = '未启动。先填写配置，再点击启动。'; $status.Width = 590; $status.Height = 70; $layout.Controls.Add($status)
+$status = [Windows.Forms.Label]::new(); $status.Text = '未启动。先填写配置，再点击启动。'; $status.Width = 590; $status.Height = 110; $layout.Controls.Add($status)
+$script:diagnostics = @()
+foreach ($pair in @(@('dns','检查Brave DNS'),@('tls','检查Brave TCP/TLS连接'),@('environment','检查网络代理环境'))) {
+    $diagnose = [Windows.Forms.Button]::new(); $diagnose.Text = $pair[1]; $diagnose.Tag = $pair[0]; $diagnose.Width = 300; $layout.Controls.Add($diagnose)
+    $diagnose.Add_Click({
+        $this.Enabled = $false
+        try { $r = Get-IdeaClipNetworkDiagnostic ([string]$this.Tag); $script:diagnostics = @($r); $status.Text = '免费诊断：' + (($r.stages | ForEach-Object { $_.stage + ':' + $_.code + ' ' + $_.elapsedMs + 'ms' }) -join '；') + '。Brave认证未测试、额度未验证。Node ' + $r.environment.node + '；8788端口空闲=' + $r.port8788Free + '；系统代理启用=' + $r.systemProxyEnabled + '；HTTP(S)代理环境存在=' + ($r.environment.httpProxyPresent -or $r.environment.httpsProxyPresent) + '。Node直连不自动使用系统代理。' }
+        catch { $status.Text = '免费诊断失败：UNKNOWN；没有搜索请求；检查Node版本和网络。' }
+        finally { $this.Enabled = $true }
+    })
+}
+$export = [Windows.Forms.Button]::new(); $export.Text = '生成脱敏诊断报告'; $export.Width = 300; $layout.Controls.Add($export)
+$export.Add_Click({
+    if (-not $script:diagnostics.Count) { $status.Text = '请先点击免费网络诊断。'; return }
+    $dialog = [Windows.Forms.SaveFileDialog]::new(); $dialog.Filter = 'JSON诊断报告|*.json'; $dialog.FileName = 'IdeaClip-Network-Diagnostics.json'
+    try { if ($dialog.ShowDialog() -eq [Windows.Forms.DialogResult]::OK) { [IO.File]::WriteAllText($dialog.FileName,($script:diagnostics | ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false)); $status.Text = '已导出仅阶段/耗时/安全码/环境状态的诊断；不含密钥或搜索词。' } } catch { $status.Text = '诊断报告保存失败。' } finally { $dialog.Dispose() }
+})
 $script:child = $null; $script:config = $null
 $start.Add_Click({
     try {
@@ -106,12 +144,12 @@ $start.Add_Click({
         $status.Text = '服务已启动：http://127.0.0.1:8788/research。请在插件保存配置并授权。搜索账户尚未验证。'
     } catch { $script:config = $null; $status.Text = $_.Exception.Message }
 })
-$health.Add_Click({ try { $r = Get-IdeaClipHealth $script:config; $status.Text = '本地代理连接正常。' + $(if ($r.search.configured) { '已填写搜索Key，上游未验证。' } else { '缺少搜索配置；公开网页/GitHub仍可使用。' }) } catch { $status.Text = $_.Exception.Message } })
+$health.Add_Click({ try { $r = Get-IdeaClipHealth $script:config; $status.Text = '本地代理连接正常。' + $(if ($r.search.configured) { '已填写搜索Key，上游未验证。' } else { '缺少搜索配置；公开网页/GitHub仍可使用。' }) + $(if ($r.PSObject.Properties['diagnostics']) { ' 最近阶段：' + (($r.diagnostics | Select-Object -Last 3 | ForEach-Object { $_.stage + ':' + $_.code }) -join '；') } else { '' }) } catch { $status.Text = $_.Exception.Message } })
 $stop.Add_Click({ Stop-IdeaClipService $script:child; $script:child = $null; $script:config = $null; $brave.Clear(); $start.Enabled = $true; $stop.Enabled = $false; $health.Enabled = $false; foreach ($b in @($extension,$hosts,$token,$brave)) { $b.Enabled = $true }; $status.Text = '服务已安全停止。未终止其他程序；Brave Key已从输入框清除。' })
 $form.Add_FormClosing({ Stop-IdeaClipService $script:child; $script:child = $null; $script:config = $null; $token.Clear(); $brave.Clear(); try { if ($script:copied -and [Windows.Forms.Clipboard]::GetText() -eq $script:copied) { [Windows.Forms.Clipboard]::Clear() } } catch {}; $script:copied = ''; $clipTimer.Dispose() })
 if ($SmokeUI) {
     try {
-        if (-not $token.UseSystemPasswordChar -or -not $brave.UseSystemPasswordChar -or $health.Enabled -or $stop.Enabled -or $layout.Controls.Count -ne 14) { throw 'UI construction validation failed' }
+        if (-not $token.UseSystemPasswordChar -or -not $brave.UseSystemPasswordChar -or $health.Enabled -or $stop.Enabled -or $layout.Controls.Count -ne 18) { throw 'UI construction validation failed' }
         Write-Output 'WINDOWS_UI_CONSTRUCTION_OK'
     } finally { $token.Clear(); $brave.Clear(); $clipTimer.Dispose(); $form.Dispose() }
     return

@@ -5,6 +5,10 @@ Assert-Service (Test-IdeaClipNodeVersion 'v24.22.0') 'Node24 rejected'
 Assert-Service (Test-IdeaClipNodeVersion 'v26.0.0') 'Future Node rejected'
 Assert-Service (-not (Test-IdeaClipNodeVersion 'v22.12.0')) 'Old Node accepted'
 Assert-Service (-not (Test-IdeaClipNodeVersion 'invalid')) 'Invalid Node accepted'
+$diagnostic = Get-IdeaClipNetworkDiagnostic 'environment'
+Assert-Service ($diagnostic.free -eq $true -and $diagnostic.searchAuthentication -eq 'untested' -and $diagnostic.searchQuota -eq 'unverified') 'Environment diagnostic not free'
+Assert-Service ($diagnostic.environment.transport -eq 'direct-pinned-https') 'Diagnostic transport changed'
+Assert-Service (-not (($diagnostic | ConvertTo-Json -Depth 8) -match 'Bearer|synthetic-windows-proxy-token')) 'Sensitive diagnostic fields'
 $config = @{ token = 'synthetic-windows-proxy-token'; origins = @('chrome-extension://' + ('a' * 32)); hosts = @('github.com'); braveKey = '' }
 $invalid = $config.Clone(); $invalid.token = ''; $rejected = $false
 try { Test-IdeaClipConfig $invalid } catch { $rejected = $true }

@@ -6,7 +6,8 @@ import { beginWorkflow, saveInvestigation, reviewEvidence, assertReview, chooseR
 import { localTopics, portableWorkflow, validateWorkflow, type Workflow } from './model';
 import { sourceDigest, validateSource, OPPORTUNITY_SECTIONS, validateResearchReport, type ResearchSource } from '../online/model';
 import { AIEngine } from '../../ai/engine';
-import { DEFAULT_CONFIG } from '../../ai/config';
+import { DEFAULT_CONFIG, PROVIDERS } from '../../ai/config';
+import { chatTransport } from '../../ai/transport';
 import { codexInstruction, full } from '../../incubation/repository';
 import { exportBackup, prepareBackup, restoreBackup, discardBackup } from '../../backup/service';
 import { readZip, writeZip } from '../../backup/zip';
@@ -30,3 +31,11 @@ it('恢复白名单拒绝未知工作流状态、数量与ID关系，执行字�
 
 it('旧ZIP5没有向导表仍可校验恢复，不授予新向导或付费资格',async()=>{const file=await exportBackup(database);const entries=await readZip(file);const manifest=JSON.parse(await entries.find(e=>e.name==='manifest.json')!.blob.text());manifest.formatVersion=5;manifest.databaseVersion=13;delete manifest.counts.researchWorkflows;manifest.entries=manifest.entries.filter((e:{name:string})=>!e.name.startsWith('data/researchWorkflows/'));const old=await writeZip(entries.filter(e=>e.name!=='manifest.json'&&!e.name.startsWith('data/researchWorkflows/')).concat({name:'manifest.json',blob:new Blob([JSON.stringify(manifest)]),crc:0}));const prepared=await prepareBackup(old);const target=new IdeaClipDB('wf-legacy-zip-'+crypto.randomUUID());try{await restoreBackup(prepared,'merge',target);expect(await target.researchPlans.count()).toBe(1);expect(await target.researchWorkflows.count()).toBe(0);}finally{await discardBackup(prepared);await target.delete();}});
 it('孵化写入失败时事务回滚，保留项目草稿及原研究，不留下空项目',async()=>{const {s,engine}=await setup();const result=await engine.run((await engine.previewResearch('study',[s.id],w.id)).id);w=await chooseReport(w,result.analysis.id,database);const before=await database.researchWorkflows.get(w.id);const spy=vi.spyOn(database.projects,'put').mockRejectedValueOnce(new DOMException('disk full','QuotaExceededError'));await expect(createReviewedProject(w,true,database)).rejects.toThrow();spy.mockRestore();expect(await database.projects.count()).toBe(0);expect(await database.researchWorkflows.get(w.id)).toEqual(before);expect(await database.researchReports.count()).toBe(1);});
+
+it('IC-016C：DeepSeek官方协议经Mock传输生成十二栏中文研究，逐字证据/预算/Markdown和历史完整',async()=>{
+ const {s}=await setup();await database.aiConfig.put({...DEFAULT_CONFIG,provider:'deepseek',endpoint:PROVIDERS.deepseek,model:'deepseek-flash',outputParameter:'max_tokens',maxOutput:8192,version:'deepseek-mock-v1',dailyBudgetUsd:0.1,inputUsdPerMillion:0.3,outputUsdPerMillion:1.2});
+ const fetcher=vi.fn<typeof fetch>(async()=>new Response('\n\n'+JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify(report(s))}}],usage:{prompt_tokens:140,completion_tokens:900}})+'\n',{headers:{'Content-Type':'application/json'}}));
+ const engine=new AIEngine(database,{permission:async()=>true,credential:async()=>({value:'synthetic-deepseek-research-key',version:'v1',endpoint:PROVIDERS.deepseek,persistent:false}),lock:async fn=>fn(),transport:chatTransport(fetcher)});engines.push(engine);
+ const p=await engine.previewResearch('study',[s.id],w.id);expect(fetcher).not.toHaveBeenCalled();expect(p.imageIds).toEqual([]);expect(p.inputTokensUpper).toBeGreaterThan(0);expect(p.costMicros).toBeLessThan(100000);
+ const result=await engine.run(p.id);expect(fetcher).toHaveBeenCalledTimes(1);const body=JSON.parse(String(fetcher.mock.calls[0][1]?.body));expect(body).toMatchObject({model:'deepseek-flash',thinking:{type:'disabled'},max_tokens:8192,stream:false});expect(result.analysis.research?.report.schemaVersion).toBe(2);expect(Object.keys(result.analysis.research!.report.sections)).toHaveLength(12);expect(result.analysis.content).toContain('反面证据');expect(result.analysis.content).toContain('未经验证的假设');expect(result.analysis.content).toContain(s.id);expect(await database.researchReports.count()).toBe(1);expect(await database.aiUsage.count()).toBe(1);await expect(engine.run(p.id)).rejects.toThrow('失效');expect(fetcher).toHaveBeenCalledTimes(1);
+});
