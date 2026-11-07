@@ -24,7 +24,7 @@ export interface Note extends NoteDetails {
   updatedAt: number;
 }
 export interface Settings { id: 'general'; aiEnabled: boolean }
-export interface Analysis { id: string; noteId: string; createdAt: number; content: string; report?: Report; skillReport?: import('./skills/model').SkillReport; template?: Skill; sourceUrl?: string; model?: string; provider?: string; endpointOrigin?: string; inputDigest?: string; inputRevision?: number; imageCount?: number }
+export interface Analysis { comparison?: import("./comparison/model").ComparisonReport; sources?: import("./comparison/model").Source[]; id: string; noteId: string; createdAt: number; content: string; report?: Report; skillReport?: import('./skills/model').SkillReport; template?: Skill; sourceUrl?: string; model?: string; provider?: string; endpointOrigin?: string; inputDigest?: string; inputRevision?: number; imageCount?: number }
 export interface Project { id: string; title: string; noteIds: string[]; createdAt: number; updatedAt: number }
 export interface Screenshot {
   id: string;
@@ -56,6 +56,7 @@ export class IdeaClipDB extends Dexie {
   aiUsage!: Table<AIUsage, string>;
   autoPolicy!: Table<AutoPolicy, string>;
   aiTasks!: Table<AITask, string>;
+  comparisonReports!: Table<Analysis, string>;
   aiTemplates!: Table<Skill, string>;
   skillPreferences!: Table<SkillPreferences, string>;
   constructor(name = 'ideaclip') {
@@ -84,6 +85,7 @@ export class IdeaClipDB extends Dexie {
     // Optional capture quality/provenance fields. Old records remain untouched and unverified.
     this.version(8).stores({});
     this.version(9).stores({ aiTemplates: 'id, updatedAt', skillPreferences: 'id' });
+    this.version(10).stores({ comparisonReports: 'id, createdAt' });
   }
 }
 export const db = new IdeaClipDB();

@@ -1,14 +1,15 @@
+import { validateComparison, comparisonMarkdown, selectedIds, type Source } from '../comparison/model';
 import { validateSkill, validateSkillReport, skillMarkdown, type Skill, type SkillReport } from '../skills/model';
 import { noteDefaults } from '../inspiration/model';
 import { httpUrl } from '../collection/model';
 import { assessQuality, paragraphMap, type TextQuality } from '../collection/quality';
 import { markdown, validateReport, type Report } from '../ai/report';
 
-export const TABLES = ['notes', 'noteDrafts', 'screenshots', 'contentCaptures', 'settings', 'analyses', 'projects', 'aiTemplates'] as const;
+export const TABLES = ['notes', 'noteDrafts', 'screenshots', 'contentCaptures', 'settings', 'analyses', 'projects', 'aiTemplates', 'comparisonReports'] as const;
 export type BackupTable = typeof TABLES[number];
 export type Row = Record<string, unknown> & { id: string };
 export interface Descriptor { name: string; size: number; sha256: string }
-export interface Manifest { format: 'IdeaClip'; formatVersion: 1 | 2; databaseVersion: number; createdAt: string; counts: Record<BackupTable, number>; entries: Descriptor[] }
+export interface Manifest { format: 'IdeaClip'; formatVersion: 1 | 2 | 3; databaseVersion: number; createdAt: string; counts: Record<BackupTable, number>; entries: Descriptor[] }
 export interface Summary { createdAt: string; counts: Record<BackupTable, number>; bytes: number }
 export const emptyCounts = () => Object.fromEntries(TABLES.map(table => [table, 0])) as Record<BackupTable, number>;
 export function object(value: unknown): Record<string, unknown> {
@@ -66,6 +67,12 @@ export function portableRow(table: BackupTable, value: unknown): Row {
   const r = object(value); const key = id(r.id);
   const dates = () => ({ createdAt: timestamp(r.createdAt), updatedAt: timestamp(r.updatedAt) });
   switch (table) {
+    case 'comparisonReports': {
+      const sources = array(r.sources).map(value => {const x=object(value);const hash=text(x.hash,64);if(!/^[a-f0-9]{64}$/.test(hash))throw new Error('来源摘要无效。'); return {id:id(x.id),revision:number(x.revision),updatedAt:timestamp(x.updatedAt),hash,title:txt(x.title),url:url(x.url),content:txt(x.content),body:txt(x.body),quality:txt(x.quality)};});
+      selectedIds(sources.map(s=>s.id)); if(new Set(sources.map(s=>s.id)).size!==sources.length)throw new Error('来源重复。');
+      const report=validateComparison(JSON.parse(JSON.stringify(r.comparison),(_k,v)=>typeof v==='string'?redact(v):v),sources as Source[]);
+      return {id:key,noteId:sources[0].id,createdAt:timestamp(r.createdAt),model:txt(r.model),sources,comparison:report,content:comparisonMarkdown(report,sources)};
+    }
     case 'aiTemplates': {
       const skill = validateSkill(r);
       const safe = JSON.parse(JSON.stringify(skill), (_key, value) => typeof value === 'string' ? redact(value) : value);
@@ -126,12 +133,12 @@ export function references(table: BackupTable, row: Row): [BackupTable, string][
 }
 export function parseManifest(value: unknown): Manifest {
   const r = object(value);
-  if (r.format !== 'IdeaClip' || ![1, 2].includes(r.formatVersion as number) || typeof r.databaseVersion !== 'number' || !Number.isInteger(r.databaseVersion) || r.databaseVersion < 1 || r.databaseVersion > 9) throw new Error('备份格式或数据库版本不兼容，请使用支持该版本的 IdeaClip。');
+  if (r.format !== 'IdeaClip' || ![1, 2, 3].includes(r.formatVersion as number) || typeof r.databaseVersion !== 'number' || !Number.isInteger(r.databaseVersion) || r.databaseVersion < 1 || r.databaseVersion > 10) throw new Error('备份格式或数据库版本不兼容，请使用支持该版本的 IdeaClip。');
   const createdAt = text(r.createdAt, 100); if (!Number.isFinite(Date.parse(createdAt))) throw new Error('备份创建时间无效。');
   const counts = emptyCounts(); const source = object(r.counts); let total = 0;
-  for (const table of TABLES) { counts[table] = table === 'aiTemplates' && r.formatVersion === 1 && r.databaseVersion <= 8 && source[table] === undefined ? 0 : number(source[table]); total += counts[table]; }
+  for (const table of TABLES) { counts[table] = table === 'comparisonReports' && Number(r.formatVersion) <= 2 && r.databaseVersion <= 9 && source[table] === undefined ? 0 : table === 'aiTemplates' && r.formatVersion === 1 && r.databaseVersion <= 8 && source[table] === undefined ? 0 : number(source[table]); total += counts[table]; }
   if (counts.aiTemplates > 105) throw new Error('备份模板数量超过安全上限。');
   if (total > 100000) throw new Error('备份记录超过 10 万条安全上限。');
   const entries = array(r.entries).map(value => { const e = object(value); const hash = text(e.sha256, 64); if (!/^[a-f0-9]{64}$/.test(hash)) throw new Error('备份校验和无效。'); return { name: text(e.name, 96), size: number(e.size), sha256: hash }; });
-  return { format: 'IdeaClip', formatVersion: r.formatVersion as 1 | 2, databaseVersion: r.databaseVersion, createdAt, counts, entries };
+  return { format: 'IdeaClip', formatVersion: r.formatVersion as 1 | 2 | 3, databaseVersion: r.databaseVersion, createdAt, counts, entries };
 }

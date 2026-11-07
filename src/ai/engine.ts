@@ -1,4 +1,6 @@
-import { BUSINESS_ID, skillSignature, skillSystem, renderInstructions, validateSkillReport, skillMarkdown, type Skill } from '../skills/model';
+import Dexie from 'dexie';
+import { selectedIds, noteHash, COMPARISON_SCHEMA, validateComparison, comparisonMarkdown, type Source } from '../comparison/model';
+import { BUILTINS, BUSINESS_ID, skillSignature, skillSystem, renderInstructions, validateSkillReport, skillMarkdown, type Skill } from '../skills/model';
 import { getSkill, preferences } from '../skills/repository';
 import { liveQuery } from 'dexie';
 import { db, getSettings, type Analysis, type IdeaClipDB } from '../storage';
@@ -11,8 +13,8 @@ import { authorizeAutomatic } from '../automation/policy';
 import { QueueFailure, type AutomaticAuthority } from '../automation/model';
 
 export interface AIUsage { id: string; noteId: string; day: string; createdAt: number; model: string; status: 'reserved' | 'succeeded' | 'failed' | 'cancelled'; reservedMicros: number; estimatedInput: number; maxOutput: number; inputTokens?: number; outputTokens?: number; errorCode?: string }
-export interface Preview { id: string; noteId: string; createdAt: number; config: AIConfig; title: string; content: string; body: string; url: string; imageIds: string[]; inputTokensUpper: number; costMicros: number; inputDigest: string; revision: number; template: Skill; systemPrompt: string; requestText: string }
-interface Prepared { preview: Preview; images: Blob[]; source: string; credentialVersion: string | null; templateSignature: string }
+export interface Preview { sources?: Source[]; id: string; noteId: string; createdAt: number; config: AIConfig; title: string; content: string; body: string; url: string; imageIds: string[]; inputTokensUpper: number; costMicros: number; inputDigest: string; revision: number; template: Skill; systemPrompt: string; requestText: string }
+interface Prepared { preview: Preview; images: Blob[]; source: string; credentialVersion: string | null; templateSignature: string; rawSources?: Source[] }
 export interface AnalysisResult { analysis: Analysis; saved: boolean }
 interface Dependencies { transport: AITransport; credential: typeof getCredential; permission: typeof hasPermission; lock: <T>(action: () => Promise<T>, signal: AbortSignal) => Promise<T>; now: () => number }
 const dependencies = (): Dependencies => ({ transport: chatTransport(), credential: getCredential, permission: hasPermission, now: Date.now, lock: async (action, signal) => { if (!globalThis.navigator?.locks) throw new RequestFailure('lock', '此环境不支持安全请求队列，请在 Chrome / Edge 扩展中运行。'); return navigator.locks.request('ideaclip-manual-ai', { signal }, action); } });
@@ -29,13 +31,13 @@ export class AIEngine {
   cancelAll() { for (const controller of this.pending.values()) controller.abort(); this.previews.clear(); }
   close() { this.closed = true; this.cancelAll(); this.channel?.close(); this.subscription.unsubscribe(); }
   private async gate() { if (this.closed || !(await getSettings(this.database)).aiEnabled) throw new RequestFailure('disabled', 'AI 分析已关闭。'); }
-  async preview(noteId: string, imageIds: string[], templateId?: string): Promise<Preview> {
+  async preview(noteId: string, imageIds: string[], templateId?: string, comparisonIds?: string[]): Promise<Preview> {
     this.previews.clear();
     await this.gate();
-    const template = await getSkill(templateId ?? (await preferences(this.database)).defaultId, this.database);
+    const template = comparisonIds ? BUILTINS[0] : await getSkill(templateId ?? (await preferences(this.database)).defaultId, this.database);
     const config = validateConfig((await this.database.aiConfig.get('manual')) ?? (() => { throw new RequestFailure('config', '请先在设置页配置并授权 AI 服务商。'); })());
     if (!(await this.dependencies.permission(config.endpoint))) throw new RequestFailure('permission', '尚未授权此服务商域名，请到设置页明确授权。');
-    config.maxOutput = Math.min(config.maxOutput, template.maxOutput);
+    config.maxOutput = comparisonIds ? config.maxOutput : Math.min(config.maxOutput, template.maxOutput);
     const credential = await this.dependencies.credential(config.endpoint);
     if (config.auth === 'bearer' && !credential?.value) throw new RequestFailure('credential', '此端点没有可用 API Key，请到设置页填写。');
     if (imageIds.length > 3 || new Set(imageIds).size !== imageIds.length || (imageIds.length && !config.vision)) throw new RequestFailure('images', '仅已确认支持图像的模型可发送截图，最多选择 3 张。');
@@ -51,23 +53,41 @@ export class AIEngine {
     if (sourceUrl) { sourceUrl.username = ''; sourceUrl.password = ''; for (const key of [...sourceUrl.searchParams.keys()]) if (/token|key|secret|password|credential|signature/i.test(key)) sourceUrl.searchParams.delete(key); }
     const input = { title: clean(note.title), content: clean(note.content), body: clean(note.body), url: clean(sourceUrl?.href ?? '') };
     const safeTemplate = JSON.parse(JSON.stringify(template), (_key, value) => typeof value === 'string' ? clean(value) : value) as Skill;
-    const systemPrompt = skillSystem(safeTemplate);
-    const source = JSON.stringify({ untrustedTemplatePreferences: { instructions: renderInstructions(safeTemplate, input), sections: safeTemplate.sections, scenario: safeTemplate.scenario, inputRequirements: safeTemplate.inputRequirements }, untrustedSource: input }); const bytes = new TextEncoder().encode(source).length;
+    let systemPrompt = skillSystem(safeTemplate);
+    let source = JSON.stringify({ untrustedTemplatePreferences: { instructions: renderInstructions(safeTemplate, input), sections: safeTemplate.sections, scenario: safeTemplate.scenario, inputRequirements: safeTemplate.inputRequirements }, untrustedSource: input }); let rawSources: Source[] | undefined; let sources: Source[] | undefined;
+    if (comparisonIds) {
+      const ids = selectedIds(comparisonIds); if (imageIds.length) throw new Error('对比不发送截图。');
+      rawSources = await this.database.transaction('r', [this.database.notes, this.database.noteDrafts, this.database.contentCaptures], async () => {
+        const out: Source[] = []; for (const id of ids) { const n = await this.database.notes.get(id); if (!n || n.saveState !== 'saved' || (await this.database.noteDrafts.get(id))?.hasChanges) throw new Error('对比包含草稿、缺失记录或未提交编辑，请重新选择。');
+        const captures = await this.database.contentCaptures.bulkGet(n.captureIds); const capture = captures.find(c => c?.text === n.content && c.sourceUrl === n.url);
+        out.push({ id, revision: n.revision, updatedAt: n.updatedAt, hash: await Dexie.waitFor(noteHash(n)), title: n.title, url: n.url, content: n.content, body: n.body, quality: capture?.quality?.state ?? '来源待核对' }); } return out;
+      });
+      sources = rawSources.map(n => { const u = n.url ? new URL(n.url) : null; if(u) { u.username='';u.password=''; for(const key of [...u.searchParams.keys()]) if(/token|key|secret|password|credential|signature/i.test(key)) u.searchParams.delete(key); } return {...n, title:clean(n.title), url:clean(u?.href??''), content:clean(n.content), body:clean(n.body)}; });
+      source = JSON.stringify({ untrustedSources: sources });
+      systemPrompt = skillSystem(safeTemplate).split('Schema：')[0] + '这是多灵感横向对比。项目必须匹配 noteId，证据只能来自对应项目原文。评分仅启发式，不能假装市场验证；0～10 越高越有利（成本/难度/风险越低则分越高）。给出优势劣势、未知、风险、任务、排序理由、7天计划和不投入条件。Schema：' + JSON.stringify(COMPARISON_SCHEMA);
+    }
+    const bytes = new TextEncoder().encode(source).length;
     if (bytes > 200000) throw new RequestFailure('size', '待发送文本超过 200000 字节，请精简笔记后重新预览；未自动截断。');
     const inputTokensUpper = new TextEncoder().encode(systemPrompt + source).length + 4096 + imageIds.length * config.imageTokenAllowance;
     const costMicros = Math.max(1, Math.ceil(inputTokensUpper * config.inputUsdPerMillion + config.maxOutput * config.outputUsdPerMillion));
     const id = crypto.randomUUID(); const inputDigest = await digest(new Blob([source, ...snapshot.images]));
-    const preview: Preview = { id, noteId, createdAt: this.dependencies.now(), config, ...input, imageIds: [...imageIds], inputTokensUpper, costMicros, inputDigest, revision: note.revision, template: safeTemplate, systemPrompt, requestText: source };
-    this.previews.set(id, { preview: structuredClone(preview), images: snapshot.images, source, credentialVersion: credential?.version ?? null, templateSignature: skillSignature(template) });
+    const preview: Preview = { id, noteId, createdAt: this.dependencies.now(), config, ...input, imageIds: [...imageIds], inputTokensUpper, costMicros, inputDigest, revision: note.revision, sources, template: safeTemplate, systemPrompt, requestText: source };
+    this.previews.set(id, { preview: structuredClone(preview), images: snapshot.images, source, credentialVersion: credential?.version ?? null, templateSignature: skillSignature(template), rawSources });
     // Return a detached value: callers cannot change the internally confirmed payload.
     return structuredClone(preview);
   }
+  async previewComparison(ids: string[]) { const selected = selectedIds(ids); return this.preview(selected[0], [], BUSINESS_ID, selected); }
   async run(previewId: string, authority?: AutomaticAuthority): Promise<AnalysisResult> {
     const prepared = this.previews.get(previewId); this.previews.delete(previewId);
     if (!prepared) throw new RequestFailure('consent', '本次确认已使用或失效，请重新预览并确认费用。');
     const { preview, images, source } = prepared; const controller = new AbortController(); this.pending.set(previewId, controller);
     let usage: AIUsage | null = null; let reserved = false; let timer: ReturnType<typeof setTimeout> | undefined; let timedOut = false;
     const checkAuthority = async () => {
+      if (prepared.rawSources) {
+        if (authority) throw new RequestFailure('consent', '多灵感对比只允许手动逐次确认。');
+        for (const source of prepared.rawSources) { const n = await this.database.notes.get(source.id); if (!n || n.saveState !== 'saved' || (await this.database.noteDrafts.get(source.id))?.hasChanges || await Dexie.waitFor(noteHash(n)) !== source.hash) throw new RequestFailure('stale', '对比来源已变化或缺失，请重新预览。'); }
+        return; // Fixed application comparison model, independent of mutable Skills.
+      }
       let latestTemplate; try { latestTemplate = await getSkill(preview.template.id, this.database); } catch { throw new RequestFailure('template', '模板已删除或停用，请重新预览并确认。'); }
       if (skillSignature(latestTemplate) !== prepared.templateSignature) throw new RequestFailure('template', '模板版本已改变，本次授权失效；不会自动发送新版本。');
       if (!authority) return;
@@ -87,7 +107,7 @@ export class AIEngine {
         if (!note || note.revision !== preview.revision || (await this.database.noteDrafts.get(preview.noteId))?.hasChanges) throw new RequestFailure('stale', '笔记已改变，请重新核对发送内容。');
         const now = this.dependencies.now(); const day = new Date(now).toISOString().slice(0, 10);
         usage = { id: preview.id, noteId: preview.noteId, day, createdAt: now, model: preview.config.model, status: 'reserved', reservedMicros: preview.costMicros, estimatedInput: preview.inputTokensUpper, maxOutput: preview.config.maxOutput };
-        await this.database.transaction('rw', [this.database.aiUsage, this.database.settings, this.database.aiConfig, this.database.aiTemplates, this.database.skillPreferences, ...(authority ? [this.database.autoPolicy, this.database.aiTasks, this.database.notes, this.database.noteDrafts, this.database.contentCaptures] : [])], async () => {
+        await this.database.transaction('rw', [this.database.aiUsage, this.database.settings, this.database.aiConfig, this.database.aiTemplates, this.database.skillPreferences, ...(prepared.rawSources ? [this.database.notes,this.database.noteDrafts] : []), ...(authority ? [this.database.autoPolicy, this.database.aiTasks, this.database.notes, this.database.noteDrafts, this.database.contentCaptures] : [])], async () => {
           await this.gate(); const latest = await this.database.aiConfig.get('manual'); if (latest?.version !== preview.config.version) throw new RequestFailure('stale', '配置已改变，请重新确认。');
           await checkAuthority();
           const rows = await this.database.aiUsage.where('day').equals(day).toArray(); const spent = rows.reduce((sum, row) => sum + row.reservedMicros, 0);
@@ -105,6 +125,13 @@ export class AIEngine {
         active(controller.signal); await this.gate();
         await checkAuthority();
         let parsed: unknown; try { parsed = JSON.parse(completion.text); } catch { throw new RequestFailure('schema', 'AI 内容不是有效 JSON；未保存报告。'); }
+        if (preview.sources) {
+          let comparison; try { comparison = validateComparison(parsed, preview.sources); } catch { throw new RequestFailure('schema', '对比报告 Schema 或来源证据无效，未保存。'); }
+          if (credential?.value && JSON.stringify(comparison).includes(credential.value)) throw new RequestFailure('credential', '响应包含凭据，已丢弃。');
+          const analysis: Analysis = { id: preview.id, noteId: preview.noteId, createdAt: this.dependencies.now(), content: comparisonMarkdown(comparison, preview.sources), comparison, sources: preview.sources, model: preview.config.model };
+          await this.database.aiUsage.update(preview.id, {status:'succeeded',inputTokens:completion.inputTokens,outputTokens:completion.outputTokens}).catch(()=>{});
+          const saved = await this.save(analysis).then(()=>true).catch(()=>false); return {analysis,saved};
+        }
         let report; try { report = validateSkillReport(parsed, preview.template, [preview.title, preview.content, preview.body, preview.url].join('\n')); }
         catch { throw new RequestFailure('schema', '报告未通过 JSON Schema 或来源证据校验；未保存报告，请确认后手动重试。'); }
         if (credential?.value && Object.values(report.sections).some(claims => claims.some(claim => claim.text.includes(credential.value) || claim.evidence?.includes(credential.value)))) throw new RequestFailure('credential', '响应包含凭据，已丢弃，未保存或显示。');
@@ -125,6 +152,7 @@ export class AIEngine {
     } finally { if (timer) clearTimeout(timer); this.pending.delete(previewId); }
   }
   async save(analysis: Analysis) {
+    if (analysis.comparison && analysis.sources) { validateComparison(analysis.comparison, analysis.sources); await this.database.transaction('rw',this.database.comparisonReports,async()=>{const old=await this.database.comparisonReports.get(analysis.id);if(old){if(JSON.stringify(old)!==JSON.stringify(analysis))throw new Error('报告 ID 冲突。');return;} await this.database.comparisonReports.add(analysis);}); return; }
     if (analysis.skillReport && analysis.template) validateSkillReport(analysis.skillReport, analysis.template);
     else if (analysis.report) { validateReport(analysis.report); if (analysis.template) validateSkillReport(analysis.report, analysis.template); } else throw new Error('没有可保存的结构化报告。');
     await this.database.transaction('rw', [this.database.notes, this.database.analyses], async () => {

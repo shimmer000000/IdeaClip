@@ -47,7 +47,7 @@ describe('批量管理事务', () => {
     legacy.version(4).stores({ notes: 'id, url, status, createdAt, updatedAt, saveState, *tags, *screenshotIds, *captureIds', noteDrafts: 'id, &entryKey, sourcePageUrl, updatedAt, *input.screenshotIds', contentCaptures: 'id, sourceUrl, platform, collectedAt, updatedAt, noteId, *screenshotIds', screenshots: 'id, createdAt', settings: 'id', analyses: 'id, noteId, createdAt', projects: 'id, updatedAt, *noteIds' });
     const old = { id: 'legacy', title: '旧标题', body: '旧感悟', content: '旧正文', url: 'https://example.com', createdAt: 1, updatedAt: 2, tags: ['旧标签'], saveState: 'saved' };
     await legacy.table('notes').add(old); await legacy.table('screenshots').add({ id: 'image', blob: new Blob(['original']) }); await legacy.table('noteDrafts').add({ id: 'pending', entryKey: 'manual:a', input: { title: '未提交标题' }, hasChanges: true, updatedAt: 3 }); legacy.close();
-    await database.open(); expect(database.verno).toBe(9); expect(await database.notes.get('legacy')).toEqual(old);
+    await database.open(); expect(database.verno).toBe(10); expect(await database.notes.get('legacy')).toEqual(old);
     expect((await new CatalogQuery().run({ ...initialFilter, query: '旧正文' }, database)).rows[0].id).toBe('legacy');
     expect(await database.draftCatalog.get('pending')).toMatchObject({ title: '未提交标题', pending: 1 }); expect(await (await database.screenshots.get('image'))?.blob.text()).toBe('original');
   });

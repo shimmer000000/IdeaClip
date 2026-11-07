@@ -1,3 +1,4 @@
+import { comparisonFixture } from '../comparison-fixture';
 import { BUILTINS, BUSINESS_ID } from '../../src/skills/model';
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { createServer, type Server, type ServerResponse } from 'node:http';
@@ -26,7 +27,7 @@ test.beforeAll(async () => {
       const requestBody = JSON.parse(body || '{}');
       const system = requestBody.messages?.[0]?.content as string;
       const schema = system?.includes('Schema：') ? JSON.parse(system.slice(system.indexOf('Schema：') + 7)) : null;
-      const report = schema ? { schemaVersion: schema.properties.schemaVersion.const, sections: Object.fromEntries(schema.properties.sections.required.map((key: string) => [key, [{ kind: 'hypothesis', text: '这是本机 Mock 生成的中文开发与商业验证建议，先访谈用户并测试。', evidence: null }]])) } : mockReport(); if (mode === 'echo') report.sections.summary[0].text = key;
+      const report = schema?.properties.projects ? comparisonFixture(JSON.parse(requestBody.messages[1].content).untrustedSources) : schema ? { schemaVersion: schema.properties.schemaVersion.const, sections: Object.fromEntries(schema.properties.sections.required.map((key: string) => [key, [{ kind: 'hypothesis', text: '这是本机 Mock 生成的中文开发与商业验证建议，先访谈用户并测试。', evidence: null }]])) } : mockReport(); if (mode === 'echo' && 'sections' in report) report.sections.summary[0].text = key;
       response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify(mode === 'invalid' ? mockCompletion({ invalid: true }) : mockCompletion(report)));
     });
   }); await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve)); endpoint = `http://127.0.0.1:${(server.address() as { port: number }).port}/v1/chat/completions`;
@@ -155,4 +156,11 @@ test('Skills：并发编辑不覆盖新版本，失败输入保留且可以重�
   await manager.getByLabel('模板名称', { exact: true }).fill('第一个窗口的新名称'); await manager.getByRole('button', { name: '保存模板', exact: true }).click(); await expect(manager.getByRole('status')).toContainText('已保存');
   await stale.getByLabel('模板名称', { exact: true }).fill('旧窗口保留的输入'); await stale.getByRole('button', { name: '保存模板', exact: true }).click(); await expect(stale.getByRole('alert')).toContainText('其他窗口'); await expect(stale.getByLabel('模板名称', { exact: true })).toHaveValue('旧窗口保留的输入');
   await stale.getByRole('button', { name: '重新读取模板（放弃未保存修改）' }).click(); await expect(stale.getByLabel('模板名称', { exact: true })).toHaveValue('第一个窗口的新名称'); expect(calls).toHaveLength(0);
+});
+
+
+test('多灵感对比：选择排序、预览确认、权重无请求、历史与来源变化',async({},info)=>{
+ await configure();await enable();await page.goto(`chrome-extension://${harness.extensionId}/analysis.html?compare=n-00005&compare=n-00006&compare=n-00005`);await expect(page.getByText('对比范围（2 条）')).toBeVisible();await page.getByRole('button',{name:'上移 2',exact:true}).click();await page.getByRole('button',{name:'预览对比资料与费用'}).click();const dialog=page.getByRole('dialog');await expect(dialog).toContainText('版本');expect(calls).toHaveLength(0);await confirm();await expect(page.getByRole('heading',{name:'横向对比报告',exact:true})).toBeVisible();expect(calls).toHaveLength(1);await page.getByLabel('权重：资金投入').fill('80');expect(calls).toHaveLength(1);await page.getByRole('button',{name:'复制对比报告'}).click();const event=page.waitForEvent('download');await page.getByRole('button',{name:'导出对比 Markdown'}).click();await (await event).saveAs(info.outputPath('comparison.md'));await page.screenshot({path:info.outputPath('comparison.png'),fullPage:true});await page.reload();await page.getByRole('heading',{name:'对比历史'}).waitFor();await page.locator('main>section').last().getByRole('button').first().click();await expect(page.getByRole('heading',{name:'横向对比报告',exact:true})).toBeVisible();expect(calls).toHaveLength(1);
+ await page.evaluate(async()=>{const d=await new Promise<IDBDatabase>(resolve=>{const r=indexedDB.open('ideaclip');r.onsuccess=()=>resolve(r.result);});const tx=d.transaction('notes','readwrite');tx.objectStore('notes').delete('n-00006');await new Promise<void>(resolve=>{tx.oncomplete=()=>resolve();});d.close();});await page.reload();await page.locator('main>section').last().getByRole('button').first().click();await expect(page.getByText(/来源缺失/)).toBeVisible();expect(calls).toHaveLength(1);
+ const backup=await downloadBackup(info);await settings.getByLabel('选择 IdeaClip 备份文件').setInputFiles(backup);await expect(settings.getByText('校验通过，尚未更改当前数据库。')).toBeVisible();await settings.getByRole('button',{name:'开始恢复',exact:true}).click();await expect(settings.getByText('恢复完成，已通知打开的灵感库刷新。')).toBeVisible();await page.reload();await page.locator('main>section').last().getByRole('button').first().click();await expect(page.getByText(/来源缺失/)).toBeVisible();expect(calls).toHaveLength(1);
 });

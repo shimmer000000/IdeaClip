@@ -1,0 +1,2 @@
+import { DIMENSIONS, GROUPS, type Source, type ComparisonReport } from '../src/comparison/model';
+export function comparisonFixture(sources: Pick<Source,'id'|'content'>[]): ComparisonReport { return {schemaVersion:1,projects:sources.map((s,i)=>({noteId:s.id,dimensions:Object.fromEntries(Object.keys(DIMENSIONS).map(k=>[k,{score:i?7:3,claims:[{kind:'hypothesis',text:'先访谈用户验证此条件。',evidence:null}]}])),...Object.fromEntries(Object.keys(GROUPS).map(k=>[k,[{kind:'hypothesis',text:'以七天访谈与小规模试验核对，证据不足时不投入。',evidence:null}]]))}))} as ComparisonReport; }
