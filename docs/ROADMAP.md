@@ -221,6 +221,14 @@
 - [x] 最终475项单元、TypeScript/生产构建与89项Chrome全量通过；Windows PowerShell5.1启停/环境/窗体构造及免费网络底层函数已验证。详见 [IC-016C记录](IC-016C-DIAGNOSTICS.md)。
 - [ ] 系统DNS/直连TCP问题仍需网络侧处理；真实付费Brave/DeepSeek未授权执行，不标通过。新Windows按钮完整人工点击、Edge/企业策略专项待验收。
 
+### 受信任CONNECT出站（IC-016C补充）
+
+- [x] Windows默认直连/显式本机HTTP CONNECT模式、端点/无认证/Node默认根证书审查确认，变更和重开不恢复批准，不自动采用系统代理。
+- [x] 全DNS公共IP检查、数字IP CONNECT、原始SNI/证书、Key仅加密原站、取消/超时/无降级；远程/认证/SOCKS、不支持IP固定的代理拒绝。
+- [x] 分路径免费诊断及脱敏展示，获准的单次真实CONNECT/TLS握手成功，无搜索HTTP/Key/词；代理内部路由仍须用户审查，不能用握手冒充审计或付费接口通过。
+- [x] 两轮490项单元、TypeScript/生产构建、89项Chrome全量通过，包含Windows合成启停和新控件默认状态、CONNECT安全专项；见 [出站代理验收](OUTBOUND-PROXY-VALIDATION.md)。
+- [ ] 代理内部数字IP转发行为须用户审查，新原生控件完整人工点击、Edge及真实付费搜索/AI未验收；付费请求继续待单次批准。
+
 ### 后续未执行事项
 
 - IC-006：全项目自动化与跨浏览器验收（IC-001 的必要测试已单独执行）。

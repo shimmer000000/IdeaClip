@@ -5,6 +5,12 @@ Assert-Service (Test-IdeaClipNodeVersion 'v24.22.0') 'Node24 rejected'
 Assert-Service (Test-IdeaClipNodeVersion 'v26.0.0') 'Future Node rejected'
 Assert-Service (-not (Test-IdeaClipNodeVersion 'v22.12.0')) 'Old Node accepted'
 Assert-Service (-not (Test-IdeaClipNodeVersion 'invalid')) 'Invalid Node accepted'
+Assert-Service ((Get-IdeaClipOutbound $null).mode -eq 'direct') 'Default outbound mode changed'
+$outboundRejected = $false
+try { [void](Get-IdeaClipOutbound @{ mode = 'connect'; endpoint = 'http://127.0.0.1:23333'; auth = 'none'; certificatePolicy = 'node-default'; approved = $false }) } catch { $outboundRejected = $true }
+Assert-Service $outboundRejected 'Unapproved outbound accepted'
+$outbound = Get-IdeaClipOutbound @{ mode = 'connect'; endpoint = 'http://127.0.0.1:23333'; auth = 'none'; certificatePolicy = 'node-default'; approved = $true }
+Assert-Service ($outbound.mode -eq 'connect') 'Explicit local outbound rejected'
 $diagnostic = Get-IdeaClipNetworkDiagnostic 'environment'
 Assert-Service ($diagnostic.free -eq $true -and $diagnostic.searchAuthentication -eq 'untested' -and $diagnostic.searchQuota -eq 'unverified') 'Environment diagnostic not free'
 Assert-Service ($diagnostic.environment.transport -eq 'direct-pinned-https') 'Diagnostic transport changed'

@@ -1,6 +1,7 @@
 // Optional self-hosted reference proxy. Never started by the extension/build/tests.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { request } from 'node:https';
+import { request, Agent } from 'node:https';
+import { validateOutbound, targetTls, type Outbound } from './research-outbound.ts';
 import { NetworkFailure, lookupPublic, connectionFailure, failure, safeEvent, diagnoseBrave, type Stage, type Event } from './research-diagnostics.ts';
 import { BlockList, isIP } from 'node:net';
 import { timingSafeEqual } from 'node:crypto';
@@ -30,27 +31,41 @@ export const connect:Connector=(url,addresses,headers,signal,observe)=>new Promi
  });req.on('socket',socket=>{socket.once('connect',()=>{observe?.({stage:'tcp',code:'OK',elapsedMs:Date.now()-start});stage='tls';});socket.once('secureConnect',()=>{observe?.({stage:'tls',code:'OK',elapsedMs:Date.now()-start});stage='http';});});
  req.on('error',e=>reject(e instanceof NetworkFailure?e:connectionFailure(e,stage,start,signal.aborted)));req.end();
 });
-export async function secureGet(url:URL,headers:Record<string,string>,signal:AbortSignal,options:{lookup?:(host:string)=>Promise<Address[]>;connect?:Connector;observe?:(event:Event)=>void}={}):Promise<SafeResponse>{
+async function tunnelGet(url:URL,addresses:Address[],headers:Record<string,string>,signal:AbortSignal,outbound:Outbound,observe?:(event:Event)=>void):Promise<SafeResponse>{
+ const start=Date.now();const socket=await targetTls(url.hostname,addresses,signal,outbound,publicAddress,observe);
+ const agent=new Agent({keepAlive:false});agent.createConnection=()=>socket;
+ return new Promise((resolve,reject)=>{
+  const done=(e?:Error,result?:SafeResponse)=>{agent.destroy();socket.destroy();if(e)reject(e);else resolve(result!);};
+  const req=request(url,{agent,signal,maxHeaderSize:16384,headers:{'User-Agent':'IdeaClip-Public-Research/1','Accept-Encoding':'identity',...headers}},res=>{
+   if((res.statusCode??0)>=300&&(res.statusCode??0)<400||res.headers['content-encoding']&&res.headers['content-encoding']!=='identity'){res.destroy();done(new Error('redirect-or-encoding'));return;}
+   const chunks:Buffer[]=[];let size=0;res.on('data',(chunk:Buffer)=>{size+=chunk.length;if(size>2*1024*1024){res.destroy();done(new Error('response-limit'));}else chunks.push(chunk);});
+   res.on('error',e=>done(connectionFailure(e,'http',start,signal.aborted)));res.on('end',()=>done(undefined,{status:res.statusCode??0,headers:res.headers,body:Buffer.concat(chunks).toString('utf8')}));
+  });req.on('error',e=>done(connectionFailure(e,'http',start,signal.aborted)));req.end();
+ });
+}
+export async function secureGet(url:URL,headers:Record<string,string>,signal:AbortSignal,options:{lookup?:(host:string)=>Promise<Address[]>;connect?:Connector;observe?:(event:Event)=>void;outbound?:Outbound}={}):Promise<SafeResponse>{
  if(url.protocol!=='https:'||url.username||url.password||url.port&&url.port!=='443'||isIP(url.hostname)||!url.hostname.includes('.')||url.hostname.endsWith('.'))throw new Error('unsafe-endpoint');
+ const outbound=validateOutbound(options.outbound);
  const addresses=await lookupPublic(url.hostname,signal,publicAddress,options.lookup);
  options.observe?.({stage:'dns',code:'OK',elapsedMs:0});options.observe?.({stage:'safety',code:'OK',elapsedMs:0});
- const response=await(options.connect??connect)(url,addresses,headers,signal,options.observe);signal.throwIfAborted();
+ const response=outbound.mode==='connect'?await tunnelGet(url,addresses,headers,signal,outbound,options.observe):await(options.connect??connect)(url,addresses,headers,signal,options.observe);signal.throwIfAborted();
  if(response.status>=300&&response.status<400)throw new Error('redirect');return response;
 }
-interface ProxyOptions { token:string; origins:string[]; hosts:string[]; braveKey?:string; maxDailySearches?:number; get?:typeof secureGet; diagnose?:typeof diagnoseBrave; diagnostic?:(event:{stage:Stage;code:string;elapsedMs:number})=>void; timeoutMs?:number }
+interface ProxyOptions { token:string; origins:string[]; hosts:string[]; braveKey?:string; maxDailySearches?:number; get?:typeof secureGet; diagnose?:typeof diagnoseBrave; diagnostic?:(event:{stage:Stage;code:string;elapsedMs:number})=>void; timeoutMs?:number;outbound?:Outbound }
 const object=(v:unknown)=>{if(!v||typeof v!=='object'||Array.isArray(v))throw new Error('body');return v as Record<string,unknown>;};
 const str=(v:unknown,max:number)=>{if(typeof v!=='string'||v.length>max)throw new Error('text');return v;};
 function equal(a:string,b:string){const x=Buffer.from(a),y=Buffer.from(b);return x.length===y.length&&timingSafeEqual(x,y);}
 async function body(req:IncomingMessage){let size=0;const chunks:Buffer[]=[];for await(const part of req){size+=part.length;if(size>32768)throw new Error('body-size');chunks.push(part);}return object(JSON.parse(Buffer.concat(chunks).toString('utf8')));}
 function json(res:ServerResponse,status:number,value:unknown){if(res.destroyed)return;res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));}
 export function createResearchProxy(options:ProxyOptions){
+ const outbound=validateOutbound(options.outbound);
  if(!/^[\x21-\x7e]{16,1000}$/.test(options.token)||!options.origins.length||options.origins.some(o=>!/^chrome-extension:\/\/[a-p]{32}$/.test(o)))throw new Error('Configure a private token and exact extension origins.');
  const hosts=[...new Set(options.hosts.map(h=>h.toLowerCase().trim()))];if(!hosts.length||hosts.length>20||hosts.some(h=>!h.includes('.')||isIP(h)||!/^[a-z0-9.-]+$/.test(h)||/(^|\.)(localhost|local|internal|arpa|onion|test|invalid)$/.test(h)))throw new Error('Configure public source host allowlist.');
  if(options.braveKey&&!/^[\x21-\x7e]{8,1000}$/.test(options.braveKey))throw new Error('Invalid search configuration.');
  let day='',searches=0;const recent:{stage:Stage;code:string;elapsedMs:number}[]=[];const log=(stage:Stage,code:string,start:number)=>{const event={stage,code,elapsedMs:Math.min(120000,Math.max(0,Date.now()-start))};recent.push(event);if(recent.length>30)recent.shift();try{options.diagnostic?.({...event});}catch{/* Diagnostics must never break a request. */}};
  const server=createServer(async(req,res)=>{
   const send=(status:number,value:unknown)=>{const raw=JSON.stringify(value);if([options.token,options.braveKey].some(k=>k&&raw.includes(k)))json(res,400,{error:'credential-in-response'});else json(res,status,value);};
-  const start=Date.now();const get=options.get??((u:URL,h:Record<string,string>,s:AbortSignal)=>secureGet(u,h,s,{observe:e=>log(e.stage,e.code,start)}));const origin=req.headers.origin??'';if(!options.origins.includes(origin)){log('auth','PROXY_AUTH_FAILED',start);send(403,{error:'PROXY_AUTH_FAILED'});return;}
+  const start=Date.now();const get=options.get??((u:URL,h:Record<string,string>,s:AbortSignal)=>secureGet(u,h,s,{outbound,observe:e=>log(e.stage,e.code,start)}));const origin=req.headers.origin??'';if(!options.origins.includes(origin)){log('auth','PROXY_AUTH_FAILED',start);send(403,{error:'PROXY_AUTH_FAILED'});return;}
   res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin');
   if(req.method==='OPTIONS'){res.writeHead(204,{'Access-Control-Allow-Methods':'POST','Access-Control-Allow-Headers':'Content-Type, Authorization'});res.end();return;}
   if(req.method!=='POST'||req.url!=='/research'||!equal(req.headers.authorization??'',`Bearer ${options.token}`)){log('auth','PROXY_AUTH_FAILED',start);send(403,{error:'PROXY_AUTH_FAILED'});return;}
@@ -60,7 +75,7 @@ export function createResearchProxy(options:ProxyOptions){
    if(op.kind==='health'){send(200,{version:1,service:'IdeaClipResearchProxy',noUpstreamRequests:true,search:{provider:'brave',configured:!!options.braveKey,verified:false},allowedHosts:hosts,usage:{day:new Date().toISOString().slice(0,10),searchRequests:day===new Date().toISOString().slice(0,10)?searches:0,searchLimit:options.maxDailySearches??50},diagnostics:recent.slice(-20)});return;}
    if(op.kind==='diagnose'){
     if(!['dns','tls','environment'].includes(String(op.mode)))throw new Error('diagnostic-mode');
-    const result=await(options.diagnose??diagnoseBrave)(op.mode as 'dns'|'tls'|'environment',publicAddress,controller.signal);
+    const result=await(options.diagnose??diagnoseBrave)(op.mode as 'dns'|'tls'|'environment',publicAddress,controller.signal,{outbound});
     for(const event of result.stages)log(event.stage,event.code,start);
     send(200,result);return;
    }

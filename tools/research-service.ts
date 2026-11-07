@@ -1,9 +1,10 @@
 import { createResearchProxy } from './research-proxy.ts';
 import { pathToFileURL } from 'node:url';
+import { validateOutbound } from './research-outbound.ts';
 export function serviceConfig(value:unknown){
  if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('invalid-config');const c=value as Record<string,unknown>;
  if(typeof c.token!=='string'||!Array.isArray(c.origins)||!Array.isArray(c.hosts)||c.origins.some(x=>typeof x!=='string')||c.hosts.some(x=>typeof x!=='string')||c.braveKey!==undefined&&typeof c.braveKey!=='string')throw new Error('invalid-config');
- return {token:c.token,origins:c.origins as string[],hosts:c.hosts as string[],braveKey:c.braveKey as string|undefined};
+ return {token:c.token,origins:c.origins as string[],hosts:c.hosts as string[],braveKey:c.braveKey as string|undefined,outbound:validateOutbound(c.outbound)};
 }
 export async function managedService(value:unknown,port=8788){
  const server=createResearchProxy(serviceConfig(value));

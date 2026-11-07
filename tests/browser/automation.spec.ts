@@ -42,7 +42,15 @@ async function configure(persistent = false, timeout = '60000') {
 }
 async function automatic(mode = 'after-save', enabled = true) {
   await settings.getByLabel('分析模式', { exact: true }).selectOption(mode); await settings.getByLabel('自动分析白名单').fill('127.0.0.1');
-  if (enabled) { await settings.getByRole('checkbox', { name: '开启自动分析（默认关闭）', exact: true }).check(); await settings.getByLabel('单次自动费用上限').fill('1'); await settings.getByRole('checkbox', { name: /我明确授权自动发送白名单/ }).check(); }
+  if (enabled) {
+    await settings.getByRole('checkbox', { name: '开启自动分析（默认关闭）', exact: true }).check();
+    const cap = settings.getByLabel('单次自动费用上限');
+    await cap.fill('1'); await cap.blur();
+    // Keep the synthetic budget fixed before scrolling/clicking consent controls.
+    await expect(cap).toHaveValue('1');
+    await settings.getByRole('checkbox', { name: /我明确授权自动发送白名单/ }).check();
+    await expect(cap).toHaveValue('1');
+  }
   if (mode === 'assist') await settings.getByRole('checkbox', { name: /我授权在上方白名单网站显示本地规则建议/ }).check();
   await settings.getByRole('button', { name: '保存分析模式与授权' }).click(); await expect(settings.getByText(/分析模式已保存|模式已保存，但网页脚本注册未完成/)).toBeVisible();
 }

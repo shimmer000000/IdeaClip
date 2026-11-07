@@ -16,6 +16,13 @@ function Get-IdeaClipNode {
     if (-not (Test-IdeaClipNodeVersion $version)) { throw 'Node.js 版本不足：研究服务需要 24 或更新版本。' }
     return $cmd.Source
 }
+function Get-IdeaClipOutbound($Value) {
+    if ($null -eq $Value -or $Value.mode -eq 'direct') { return @{ mode = 'direct' } }
+    if ($Value.mode -ne 'connect' -or $Value.approved -ne $true -or $Value.auth -ne 'none' -or $Value.certificatePolicy -ne 'node-default' -or $Value.endpoint -notmatch '^http://(127\.0\.0\.1|\[::1\]):([1-9][0-9]{0,4})/?$') { throw '出站代理仅支持明确批准的本机HTTP CONNECT，无代理认证，保留原站Node默认可信库验证。' }
+    $uri = [Uri]$Value.endpoint
+    if ($uri.Port -lt 1 -or $uri.Port -gt 65535) { throw '出站代理端口无效。' }
+    return @{ mode = 'connect'; endpoint = $Value.endpoint; auth = 'none'; certificatePolicy = 'node-default'; approved = $true }
+}
 function Test-IdeaClipConfig($Config) {
     if ($Config.token -notmatch '^[\x21-\x7e]{16,1000}$') { throw '代理访问密钥须为16至1000个可见ASCII字符。' }
     if ($Config.origins.Count -lt 1 -or $Config.origins.Count -gt 10) { throw '请填写扩展 ID。' }
@@ -43,17 +50,18 @@ function Get-IdeaClipHealth($Config) {
         } finally { $response.Dispose() }
     } catch { throw '本地健康检查失败。未调用搜索或AI；请核对服务、端口和配置。' } finally { $client.Dispose() }
 }
-function Get-IdeaClipNetworkDiagnostic([string]$Mode) {
+function Get-IdeaClipNetworkDiagnostic([string]$Mode, $Outbound = $null) {
     if ($Mode -notin @('dns','tls','environment')) { throw 'UNKNOWN：诊断模式无效。' }
     $node = Get-IdeaClipNode
     $info = [Diagnostics.ProcessStartInfo]::new(); $info.FileName = $node
     $entry = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../tools/research-network-check.ts'))
-    $info.Arguments = '"' + $entry + '" ' + $Mode
-    $info.UseShellExecute = $false; $info.CreateNoWindow = $true; $info.RedirectStandardOutput = $true; $info.RedirectStandardError = $true
+    $network = Get-IdeaClipOutbound $Outbound
+    $info.Arguments = '"' + $entry + '" ' + $Mode + ' --configured'
+    $info.UseShellExecute = $false; $info.CreateNoWindow = $true; $info.RedirectStandardInput = $true; $info.RedirectStandardOutput = $true; $info.RedirectStandardError = $true
     foreach ($name in @('BRAVE_SEARCH_API_KEY','IDEACLIP_RESEARCH_PROXY_TOKEN')) { $info.EnvironmentVariables.Remove($name) }
     $child = [Diagnostics.Process]::new(); $child.StartInfo = $info
     try {
-        [void]$child.Start(); $child.BeginErrorReadLine(); $output = $child.StandardOutput.ReadToEndAsync()
+        [void]$child.Start(); $child.BeginErrorReadLine(); $child.StandardInput.WriteLine(($network | ConvertTo-Json -Compress)); $child.StandardInput.Close(); $output = $child.StandardOutput.ReadToEndAsync()
         if (-not $child.WaitForExit(13000)) { $child.Kill(); throw 'UPSTREAM_TIMEOUT：免费诊断超时。' }
         $raw = $output.GetAwaiter().GetResult()
         if ($child.ExitCode -ne 0 -or $raw.Length -gt 16384) { throw 'UNKNOWN：无法生成免费诊断。' }
@@ -114,6 +122,14 @@ $clipTimer = [Windows.Forms.Timer]::new(); $clipTimer.Interval = 30000; $script:
 $copy.Add_Click({ try { [Windows.Forms.Clipboard]::SetText($token.Text); $script:copied = $token.Text; $clipTimer.Start() } catch { [void][Windows.Forms.MessageBox]::Show('复制失败，请稍后重试。') } })
 $clipTimer.Add_Tick({ try { if ([Windows.Forms.Clipboard]::GetText() -eq $script:copied) { [Windows.Forms.Clipboard]::Clear() } } catch {} finally { $script:copied = ''; $clipTimer.Stop() } })
 Add-Label 'Brave Search API Key（可留空；健康检查不会验证账户或产生搜索费用）'; $brave = Add-Input $true
+Add-Label '出站网络模式（默认直连；不自动采用系统代理）'
+$networkMode = [Windows.Forms.ComboBox]::new(); $networkMode.Width = 590; $networkMode.DropDownStyle = 'DropDownList'; [void]$networkMode.Items.Add('直连'); [void]$networkMode.Items.Add('用户配置的受信任代理（HTTP CONNECT）'); $networkMode.SelectedIndex = 0; $layout.Controls.Add($networkMode)
+Add-Label '受信任本机代理端点（仅http://127.0.0.1:端口或[::1]；不支持远程/认证代理）'
+$networkEndpoint = Add-Input; $networkEndpoint.Enabled = $false
+$networkAck = [Windows.Forms.CheckBox]::new(); $networkAck.Width = 590; $networkAck.Height = 65; $networkAck.Enabled = $false; $networkAck.Text = '我已审查并批准此端点：无需代理认证，按CONNECT数字IP转发，不通过SNI覆盖目标；原站证书仍由Node默认可信库验证，不放宽TLS。'; $layout.Controls.Add($networkAck)
+$networkMode.Add_SelectedIndexChanged({ $on = $networkMode.SelectedIndex -eq 1; $networkEndpoint.Enabled = $on; $networkAck.Enabled = $on; $networkAck.Checked = $false })
+$networkEndpoint.Add_TextChanged({ $networkAck.Checked = $false })
+function Get-SelectedOutbound { if ($networkMode.SelectedIndex -eq 0) { return @{ mode = 'direct' } }; return Get-IdeaClipOutbound @{ mode = 'connect'; endpoint = $networkEndpoint.Text.Trim(); auth = 'none'; certificatePolicy = 'node-default'; approved = $networkAck.Checked } }
 $start = [Windows.Forms.Button]::new(); $start.Text = '启动本地研究服务'; $start.Width = 250; $layout.Controls.Add($start)
 $health = [Windows.Forms.Button]::new(); $health.Text = '检查本地代理（免费）'; $health.Width = 250; $health.Enabled = $false; $layout.Controls.Add($health)
 $stop = [Windows.Forms.Button]::new(); $stop.Text = '安全停止服务'; $stop.Width = 250; $stop.Enabled = $false; $layout.Controls.Add($stop)
@@ -123,7 +139,7 @@ foreach ($pair in @(@('dns','检查Brave DNS'),@('tls','检查Brave TCP/TLS连�
     $diagnose = [Windows.Forms.Button]::new(); $diagnose.Text = $pair[1]; $diagnose.Tag = $pair[0]; $diagnose.Width = 300; $layout.Controls.Add($diagnose)
     $diagnose.Add_Click({
         $this.Enabled = $false
-        try { $r = Get-IdeaClipNetworkDiagnostic ([string]$this.Tag); $script:diagnostics = @($r); $status.Text = '免费诊断：' + (($r.stages | ForEach-Object { $_.stage + ':' + $_.code + ' ' + $_.elapsedMs + 'ms' }) -join '；') + '。Brave认证未测试、额度未验证。Node ' + $r.environment.node + '；8788端口空闲=' + $r.port8788Free + '；系统代理启用=' + $r.systemProxyEnabled + '；HTTP(S)代理环境存在=' + ($r.environment.httpProxyPresent -or $r.environment.httpsProxyPresent) + '。Node直连不自动使用系统代理。' }
+        try { $r = Get-IdeaClipNetworkDiagnostic ([string]$this.Tag) (Get-SelectedOutbound); $script:diagnostics = @($r); $status.Text = '免费诊断：' + (($r.stages | ForEach-Object { $_.stage + ':' + $_.code + ' ' + $_.elapsedMs + 'ms' }) -join '；') + '。Brave认证未测试、额度未验证。路径=' + $r.environment.transport + '；Node ' + $r.environment.node + '；8788空闲=' + $r.port8788Free + '；系统代理启用=' + $r.systemProxyEnabled + '。不自动采用系统代理，不自动回退或搜索。' }
         catch { $status.Text = '免费诊断失败：UNKNOWN；没有搜索请求；检查Node版本和网络。' }
         finally { $this.Enabled = $true }
     })
@@ -137,19 +153,19 @@ $export.Add_Click({
 $script:child = $null; $script:config = $null
 $start.Add_Click({
     try {
-        $script:config = @{ token = $token.Text; origins = @('chrome-extension://' + $extension.Text.Trim()); hosts = @($hosts.Text.ToLowerInvariant().Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }); braveKey = $brave.Text }
+        $script:config = @{ token = $token.Text; origins = @('chrome-extension://' + $extension.Text.Trim()); hosts = @($hosts.Text.ToLowerInvariant().Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }); braveKey = $brave.Text; outbound = (Get-SelectedOutbound) }
         $script:child = Start-IdeaClipService $script:config
         $start.Enabled = $false; $stop.Enabled = $true; $health.Enabled = $true
-        foreach ($b in @($extension,$hosts,$token,$brave)) { $b.Enabled = $false }
+        foreach ($b in @($extension,$hosts,$token,$brave,$networkMode,$networkEndpoint,$networkAck)) { $b.Enabled = $false }
         $status.Text = '服务已启动：http://127.0.0.1:8788/research。请在插件保存配置并授权。搜索账户尚未验证。'
     } catch { $script:config = $null; $status.Text = $_.Exception.Message }
 })
 $health.Add_Click({ try { $r = Get-IdeaClipHealth $script:config; $status.Text = '本地代理连接正常。' + $(if ($r.search.configured) { '已填写搜索Key，上游未验证。' } else { '缺少搜索配置；公开网页/GitHub仍可使用。' }) + $(if ($r.PSObject.Properties['diagnostics']) { ' 最近阶段：' + (($r.diagnostics | Select-Object -Last 3 | ForEach-Object { $_.stage + ':' + $_.code }) -join '；') } else { '' }) } catch { $status.Text = $_.Exception.Message } })
-$stop.Add_Click({ Stop-IdeaClipService $script:child; $script:child = $null; $script:config = $null; $brave.Clear(); $start.Enabled = $true; $stop.Enabled = $false; $health.Enabled = $false; foreach ($b in @($extension,$hosts,$token,$brave)) { $b.Enabled = $true }; $status.Text = '服务已安全停止。未终止其他程序；Brave Key已从输入框清除。' })
+$stop.Add_Click({ Stop-IdeaClipService $script:child; $script:child = $null; $script:config = $null; $brave.Clear(); $start.Enabled = $true; $stop.Enabled = $false; $health.Enabled = $false; foreach ($b in @($extension,$hosts,$token,$brave,$networkMode)) { $b.Enabled = $true }; $networkEndpoint.Enabled = $networkMode.SelectedIndex -eq 1; $networkAck.Enabled = $networkMode.SelectedIndex -eq 1; $networkAck.Checked = $false; $status.Text = '服务已安全停止。未终止其他程序；Brave Key已清除，出站代理下次需重新确认。' })
 $form.Add_FormClosing({ Stop-IdeaClipService $script:child; $script:child = $null; $script:config = $null; $token.Clear(); $brave.Clear(); try { if ($script:copied -and [Windows.Forms.Clipboard]::GetText() -eq $script:copied) { [Windows.Forms.Clipboard]::Clear() } } catch {}; $script:copied = ''; $clipTimer.Dispose() })
 if ($SmokeUI) {
     try {
-        if (-not $token.UseSystemPasswordChar -or -not $brave.UseSystemPasswordChar -or $health.Enabled -or $stop.Enabled -or $layout.Controls.Count -ne 18) { throw 'UI construction validation failed' }
+        if (-not $token.UseSystemPasswordChar -or -not $brave.UseSystemPasswordChar -or $health.Enabled -or $stop.Enabled -or $layout.Controls.Count -ne 23 -or $networkMode.SelectedIndex -ne 0 -or $networkAck.Checked -or $networkAck.Enabled) { throw 'UI construction validation failed' }
         Write-Output 'WINDOWS_UI_CONSTRUCTION_OK'
     } finally { $token.Clear(); $brave.Clear(); $clipTimer.Dispose(); $form.Dispose() }
     return

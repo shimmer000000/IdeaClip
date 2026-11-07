@@ -1,5 +1,9 @@
 # IC-016C：Brave网络诊断、研究代理错误及DeepSeek准备
 
+## 后续：可选受信任CONNECT出站
+
+基于本次交付后的新授权，现已增加默认关闭、需用户审查并主动启用的本机HTTP CONNECT模式。此前“本轮不新增出站代理”是下方历史验收范围，当前补充实现、信任边界和测试见 [出站代理验收](OUTBOUND-PROXY-VALIDATION.md)。只读识别到系统本机HTTP代理后，用户仅批准一次免费CONNECT/TLS诊断；已通过数字IP隧道及原始Brave域名的有效证书握手，无搜索HTTP、Key或词，未批准任何真实付费搜索/AI。没有自动启用系统代理、改DNS或重试首次失败搜索。
+
 日期：2026-11-07；基线 `c01f0007dfde435b31aa60107de78fdb1be3dd08`。已拉取main，阅读AGENTS/README/ROADMAP、IC-013一期/二期、IC-014、IC-015、IC-016及代理协议，使用CodeGraph检查代理、ResearchAdapter、AIEngine、预算、权限及数据关系。没有新增依赖、数据库版本或默认权限，没有删除/恢复用户库、重置预算或修改账户。
 
 ## 首次失败的观察与证据边界

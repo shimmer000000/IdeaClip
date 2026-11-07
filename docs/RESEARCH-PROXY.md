@@ -22,6 +22,28 @@ IC-016 的三个公开来源已通过生产安全代理进入独立 Chrome 验�
 
 ## 参考实现与服务范围
 
+### 可选的受信任本机 HTTP CONNECT 出站
+
+默认仍为直连；不跟随Windows系统代理、PAC或HTTP_PROXY自动启用。Windows窗口新增“出站网络模式”：选择受信任代理、显式填写本机端点并勾选审查确认后，才可用于启动服务或免费诊断。改地址/模式或安全停止后须重新确认；每次打开窗口默认直连。
+
+当前有意限定为`http://127.0.0.1:端口`或`http://[::1]:端口`，不接受localhost名称、远程代理、用户信息/查询/路径、SOCKS或代理认证；遇到407/不支持数字IP/3xx/异常隧道头即拒绝，不发Proxy-Authorization、不降级为域名CONNECT或直连。需要这些功能的部署须另行审计，不能用自定义URL逃逸。
+
+服务内存配置可选字段：
+
+```json
+{"outbound":{"mode":"connect","endpoint":"http://127.0.0.1:端口","auth":"none","certificatePolicy":"node-default","approved":true}}
+```
+
+这里的“端口”须替换为用户审查后的数字，仅展示结构，不可直接当有效配置。未提供outbound为`{mode:"direct"}`。此字段仅经Windows匿名stdin传入服务或独立诊断，不是扩展配置、普通备份或付费授权，不写入命令行/环境变量/文件。独立诊断的`--configured`也只从stdin接受这一个受限对象，不接受Key或目标URL；普通用户使用窗口即可。
+
+流程：先对目标域名做原有全部DNS回答公共IP检查，只选择首个已校验IP；向明确代理发送`CONNECT 数字IP:443`，IPv6加方括号，Host也为数字authority，不发送Brave Key、Cookie或代理Token。200且无额外隧道字节后，在原socket内建立TLS，SNI和证书按原始目标域名、`rejectUnauthorized:true`验证；ALPN固定HTTP/1.1。只有验证成功才通过一次性HTTPS Agent发送原站Host/路径及该原站需要的头。不进行第二次目标DNS解析、不换IP/重试、不跟随重定向。Key只进加密原站HTTP，不进CONNECT。
+
+`node-default`是Node当前默认可信证书库/主机名校验，不等于自动导入所有Windows企业证书；不添加CA、不接受用户关闭验证。若用户进程自行配置了额外可信CA，也属于需自行审查的信任环境；本项目不修改。测试仅在独立合成子进程为临时Mock证书设置额外CA，不影响用户环境。
+
+**信任边界**：客户端能固定CONNECT请求的IP并验证原站TLS，不能独立证明代理内部实际连接的IP。须审查受信任代理遵守数字IP转发、不用SNI/sniffing覆盖目的地址；未知/不兼容实现不能批准生产模式。CONNECT/TLS成功只是连接证据，不是该代理内部SSRF审计、Key认证或搜索额度证明。代理可看到目标IP、SNI及流量时序；不要将不受信任代理或中间人CA当作安全方案。无法满足时保持直连，修复可信DNS/网络路径，或另行审计在服务端固定IP、禁止私网/重定向的受控出站网关。
+
+免费诊断沿用本次选择的出站模式，响应transport为`direct-pinned-https`或`http-connect-pinned-ip`，新增`outbound`和`connect`阶段，以及`OUTBOUND_PROXY_UNREACHABLE`、`CONNECT_REJECTED`、`CONNECT_PROTOCOL_INVALID`；仍不带Key/搜索HTTP、不增加搜索次数或预算。浏览器只显示/诊断服务当前固定模式，无权从网页请求更换端点或批准出站。实现与实测见 [出站代理验收](OUTBOUND-PROXY-VALIDATION.md)。
+
 `tools/research-proxy.ts` 是可选自有代理参考实现，需要 Node.js 24+；插件和构建不会启动它。仅使用 Node 内置 HTTP/HTTPS、DNS、net、crypto，无新增 npm 依赖。当前内置上游为 Brave Web Search、公开 HTTPS HTML/纯文本和 GitHub 公开仓库元数据。Brave 协议依据[官方文档](https://api-dashboard.search.brave.com/app/documentation/web-search/get-started)：固定 `https://api.search.brave.com/res/v1/web/search`，通过 `X-Subscription-Token` 认证；不调用 LLM Context 等额外接口。真实账户与收费尚未验收。
 
 不提供 Tavily、Serper、Google 等专用原生适配器，也不支持将这些 API 的原始 URL 直接填入插件。可以在自有代理中依法接入服务，再转换为本协议。参考代理不是 AI 模型代理；AI 综合仍使用现有 AIEngine 和原 AI 服务配置。

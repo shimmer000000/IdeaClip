@@ -25,15 +25,18 @@ const MESSAGES = {
   SEARCH_RESULT_EMPTY:'Brave返回0条搜索结果。',
   SEARCH_RESULT_FILTERED:'Brave返回结果，但来源白名单或URL安全过滤后为0条。',
   UNKNOWN:'研究请求中断阶段无法确认，未自动重试。',
+  OUTBOUND_PROXY_UNREACHABLE:'用户配置的出站代理不可达；不回退直连。',
+  CONNECT_REJECTED:'出站代理拒绝数字IP CONNECT或要求认证；不使用域名CONNECT、不自动提供凭据。',
+  CONNECT_PROTOCOL_INVALID:'出站代理隧道响应不符合安全要求，已拒绝；不降级。',
 } as const;
 export type ResearchErrorCode = keyof typeof MESSAGES;
-const stages=['proxy','auth','search','dns','safety','tcp','tls','http','parse','client','environment'] as const;
+const stages=['proxy','auth','search','dns','safety','tcp','tls','http','parse','client','environment','outbound','connect'] as const;
 export type FailureStage=typeof stages[number];
-const stageOf:Partial<Record<ResearchErrorCode,FailureStage>>={PROXY_UNREACHABLE:'proxy',PROXY_AUTH_FAILED:'auth',DNS_LOOKUP_FAILED:'dns',DNS_ADDRESS_BLOCKED:'safety',TCP_CONNECT_FAILED:'tcp',TLS_HANDSHAKE_FAILED:'tls',TLS_CERTIFICATE_FAILED:'tls',UPSTREAM_TIMEOUT:'http',CLIENT_TIMEOUT:'client',REQUEST_CANCELLED:'client',SEARCH_AUTH_FAILED:'http',SEARCH_QUOTA_EXCEEDED:'http',SEARCH_HTTP_ERROR:'http',SEARCH_RESPONSE_INVALID:'parse'};
+const stageOf:Partial<Record<ResearchErrorCode,FailureStage>>={OUTBOUND_PROXY_UNREACHABLE:'outbound',CONNECT_REJECTED:'connect',CONNECT_PROTOCOL_INVALID:'connect',PROXY_UNREACHABLE:'proxy',PROXY_AUTH_FAILED:'auth',DNS_LOOKUP_FAILED:'dns',DNS_ADDRESS_BLOCKED:'safety',TCP_CONNECT_FAILED:'tcp',TLS_HANDSHAKE_FAILED:'tls',TLS_CERTIFICATE_FAILED:'tls',UPSTREAM_TIMEOUT:'http',CLIENT_TIMEOUT:'client',REQUEST_CANCELLED:'client',SEARCH_AUTH_FAILED:'http',SEARCH_QUOTA_EXCEEDED:'http',SEARCH_HTTP_ERROR:'http',SEARCH_RESPONSE_INVALID:'parse'};
 export class ResearchFailure extends Error {
   readonly stage:FailureStage;readonly mayHaveSent:boolean;readonly outcomeUnknown:boolean;
   constructor(readonly code:ResearchErrorCode,stage:FailureStage=stageOf[code]??'proxy') {
-    const preSend=['auth','dns','safety','tcp','tls'].includes(stage);const unknown=['proxy','client'].includes(stage);
+    const preSend=['auth','dns','safety','tcp','tls','outbound','connect'].includes(stage);const unknown=['proxy','client'].includes(stage);
     super(`${MESSAGES[code]} 安全错误代码：${code}；失败阶段：${stage}；是否可能已发送到Brave：${preSend?'否（按已知阶段）':unknown?'未知':'可能'}；是否可能消耗额度：${preSend?'此阶段未发送搜索':unknown?'未知':'可能'}；允许免费重测：仅DNS/TCP/TLS诊断；下一步：先检查免费网络诊断，付费搜索须重新预览确认。本地预留不是实际扣费。`);
     this.stage=stage;this.mayHaveSent=!preSend;this.outcomeUnknown=['UPSTREAM_TIMEOUT','CLIENT_TIMEOUT','REQUEST_CANCELLED','PROXY_UNREACHABLE','UNKNOWN','SEARCH_RESPONSE_INVALID'].includes(code)&&!preSend;
   }

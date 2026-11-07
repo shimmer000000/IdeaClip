@@ -2,7 +2,7 @@ import { lookup } from 'node:dns/promises';
 import { connect as tlsConnect } from 'node:tls';
 import { isIP } from 'node:net';
 
-export type Stage = 'proxy'|'auth'|'search'|'dns'|'safety'|'tcp'|'tls'|'http'|'parse'|'client'|'environment';
+export type Stage = 'proxy'|'auth'|'search'|'dns'|'safety'|'tcp'|'tls'|'http'|'parse'|'client'|'environment'|'outbound'|'connect';
 export interface Event {stage:Stage;code:string;elapsedMs:number}
 export class NetworkFailure extends Error {
   readonly code:string;readonly stage:Stage;readonly elapsedMs:number;
@@ -36,15 +36,17 @@ export async function tlsProbe(address:Address,signal:AbortSignal,onStage:(stage
     socket.once('close',()=>signal.removeEventListener('abort',abort));
   });
 }
-export interface DiagnosticReport {version:1;free:true;searchAuthentication:'untested';searchQuota:'unverified';stages:Event[];environment:{node:string;httpProxyPresent:boolean;httpsProxyPresent:boolean;nodeEnvProxy:boolean;transport:'direct-pinned-https'}}
-export async function diagnoseBrave(mode:'dns'|'tls'|'environment',allowed:(address:string)=>boolean,signal:AbortSignal,overrides:{resolve?:(host:string)=>Promise<Address[]>;probe?:typeof tlsProbe}={}):Promise<DiagnosticReport>{
-  const report:DiagnosticReport={version:1,free:true,searchAuthentication:'untested',searchQuota:'unverified',stages:[],environment:{node:process.versions.node,httpProxyPresent:!!process.env.HTTP_PROXY||!!process.env.http_proxy,httpsProxyPresent:!!process.env.HTTPS_PROXY||!!process.env.https_proxy,nodeEnvProxy:process.env.NODE_USE_ENV_PROXY==='1',transport:'direct-pinned-https'}};
+export interface DiagnosticReport {version:1;free:true;searchAuthentication:'untested';searchQuota:'unverified';stages:Event[];environment:{node:string;httpProxyPresent:boolean;httpsProxyPresent:boolean;nodeEnvProxy:boolean;transport:'direct-pinned-https'|'http-connect-pinned-ip'}}
+export async function diagnoseBrave(mode:'dns'|'tls'|'environment',allowed:(address:string)=>boolean,signal:AbortSignal,overrides:{resolve?:(host:string)=>Promise<Address[]>;probe?:typeof tlsProbe;outbound?:import('./research-outbound.ts').Outbound}={}):Promise<DiagnosticReport>{
+  const {validateOutbound,targetTls}=await import('./research-outbound.ts');const outbound=validateOutbound(overrides.outbound);
+  const report:DiagnosticReport={version:1,free:true,searchAuthentication:'untested',searchQuota:'unverified',stages:[],environment:{node:process.versions.node,httpProxyPresent:!!process.env.HTTP_PROXY||!!process.env.http_proxy,httpsProxyPresent:!!process.env.HTTPS_PROXY||!!process.env.https_proxy,nodeEnvProxy:process.env.NODE_USE_ENV_PROXY==='1',transport:outbound.mode==='connect'?'http-connect-pinned-ip':'direct-pinned-https'}};
   if(mode==='environment'){report.stages.push({stage:'environment',code:'OK',elapsedMs:0});return report;}
   const start=Date.now();let stage:Stage='dns';
   try{
     const addresses=await lookupPublic(BRAVE_HOST,signal,allowed,overrides.resolve);
     report.stages.push({stage:'dns',code:'OK',elapsedMs:Date.now()-start},{stage:'safety',code:'OK',elapsedMs:Date.now()-start});
     if(mode==='tls'){
+      if(outbound.mode==='connect'){const socket=await targetTls(BRAVE_HOST,addresses,signal,outbound,allowed,e=>report.stages.push(e));socket.destroy();return report;}
       await(overrides.probe??tlsProbe)(addresses[0],signal,s=>{if(stage==='tcp'&&s==='tls')report.stages.push({stage:'tcp',code:'OK',elapsedMs:Date.now()-start});stage=s;});
       report.stages.push({stage:'tls',code:'OK',elapsedMs:Date.now()-start});
     }
