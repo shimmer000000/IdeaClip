@@ -1,3 +1,4 @@
+import { portableOnline } from '../research/online/backup';
 import { FIELDS } from '../incubation/model';
 import { validatePlan } from '../research/model';
 import { validateProject } from '../incubation/repository';
@@ -9,11 +10,11 @@ import { httpUrl } from '../collection/model';
 import { assessQuality, paragraphMap, type TextQuality } from '../collection/quality';
 import { markdown, validateReport, type Report } from '../ai/report';
 
-export const TABLES = ['notes', 'noteDrafts', 'screenshots', 'contentCaptures', 'settings', 'analyses', 'projects', 'aiTemplates', 'comparisonReports', 'researchPlans'] as const;
+export const TABLES = ['notes', 'noteDrafts', 'screenshots', 'contentCaptures', 'settings', 'analyses', 'projects', 'aiTemplates', 'comparisonReports', 'researchPlans', 'researchSources', 'researchRuns', 'researchReports'] as const;
 export type BackupTable = typeof TABLES[number];
 export type Row = Record<string, unknown> & { id: string };
 export interface Descriptor { name: string; size: number; sha256: string }
-export interface Manifest { format: 'IdeaClip'; formatVersion: 1 | 2 | 3 | 4; databaseVersion: number; createdAt: string; counts: Record<BackupTable, number>; entries: Descriptor[] }
+export interface Manifest { format: 'IdeaClip'; formatVersion: 1 | 2 | 3 | 4 | 5; databaseVersion: number; createdAt: string; counts: Record<BackupTable, number>; entries: Descriptor[] }
 export interface Summary { createdAt: string; counts: Record<BackupTable, number>; bytes: number }
 export const emptyCounts = () => Object.fromEntries(TABLES.map(table => [table, 0])) as Record<BackupTable, number>;
 export function object(value: unknown): Record<string, unknown> {
@@ -71,6 +72,7 @@ export function portableRow(table: BackupTable, value: unknown): Row {
   const r = object(value); const key = id(r.id);
   const dates = () => ({ createdAt: timestamp(r.createdAt), updatedAt: timestamp(r.updatedAt) });
   switch (table) {
+    case 'researchSources': case 'researchRuns': case 'researchReports': return portableOnline(table,r,redact,url);
     case 'researchPlans': {
       const p=validatePlan(r);
       const versions=p.versions.map(v=>({...v,data:{...v.data,title:redact(v.data.title),objective:redact(v.data.objective),notes:redact(v.data.notes),sections:Object.fromEntries(Object.entries(v.data.sections).map(([k,s])=>[k,redact(s)])),refs:v.data.refs.map(ref=>({...ref,title:redact(ref.title)})),sources:v.data.sources.map(s=>({...s,title:redact(s.title),url:url(s.url),excerpt:redact(s.excerpt),evidence:redact(s.evidence),notes:redact(s.notes)}))}}));
@@ -151,12 +153,12 @@ export function references(table: BackupTable, row: Row): [BackupTable, string][
 }
 export function parseManifest(value: unknown): Manifest {
   const r = object(value);
-  if (r.format !== 'IdeaClip' || ![1, 2, 3, 4].includes(r.formatVersion as number) || typeof r.databaseVersion !== 'number' || !Number.isInteger(r.databaseVersion) || r.databaseVersion < 1 || r.databaseVersion > 12) throw new Error('备份格式或数据库版本不兼容，请使用支持该版本的 IdeaClip。');
+  if (r.format !== 'IdeaClip' || ![1, 2, 3, 4, 5].includes(r.formatVersion as number) || typeof r.databaseVersion !== 'number' || !Number.isInteger(r.databaseVersion) || r.databaseVersion < 1 || r.databaseVersion > 13) throw new Error('备份格式或数据库版本不兼容，请使用支持该版本的 IdeaClip。');
   const createdAt = text(r.createdAt, 100); if (!Number.isFinite(Date.parse(createdAt))) throw new Error('备份创建时间无效。');
   const counts = emptyCounts(); const source = object(r.counts); let total = 0;
-  for (const table of TABLES) { counts[table] = table === 'researchPlans' && Number(r.formatVersion) <= 3 && r.databaseVersion <= 11 && source[table] === undefined ? 0 : table === 'comparisonReports' && Number(r.formatVersion) <= 2 && r.databaseVersion <= 9 && source[table] === undefined ? 0 : table === 'aiTemplates' && r.formatVersion === 1 && r.databaseVersion <= 8 && source[table] === undefined ? 0 : number(source[table]); total += counts[table]; }
+  for (const table of TABLES) { counts[table] = ['researchSources','researchRuns','researchReports'].includes(table) && Number(r.formatVersion)<=4 && r.databaseVersion<=12 && source[table]===undefined ? 0 : table === 'researchPlans' && Number(r.formatVersion) <= 3 && r.databaseVersion <= 11 && source[table] === undefined ? 0 : table === 'comparisonReports' && Number(r.formatVersion) <= 2 && r.databaseVersion <= 9 && source[table] === undefined ? 0 : table === 'aiTemplates' && r.formatVersion === 1 && r.databaseVersion <= 8 && source[table] === undefined ? 0 : number(source[table]); total += counts[table]; }
   if (counts.aiTemplates > 105) throw new Error('备份模板数量超过安全上限。');
   if (total > 100000) throw new Error('备份记录超过 10 万条安全上限。');
   const entries = array(r.entries).map(value => { const e = object(value); const hash = text(e.sha256, 64); if (!/^[a-f0-9]{64}$/.test(hash)) throw new Error('备份校验和无效。'); return { name: text(e.name, 96), size: number(e.size), sha256: hash }; });
-  return { format: 'IdeaClip', formatVersion: r.formatVersion as 1 | 2 | 3 | 4, databaseVersion: r.databaseVersion, createdAt, counts, entries };
+  return { format: 'IdeaClip', formatVersion: r.formatVersion as 1 | 2 | 3 | 4 | 5, databaseVersion: r.databaseVersion, createdAt, counts, entries };
 }

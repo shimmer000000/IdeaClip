@@ -123,7 +123,7 @@ describe('迁移与备份', () => {
   it('v8→v9 保留旧笔记、原图、报告、任务与账本，不自动建立模板授权', async () => {
     const name = 'skill-migration-' + crypto.randomUUID(); const old = new Dexie(name); old.version(8).stores({ notes: 'id', screenshots: 'id', analyses: 'id', aiTasks: 'id', aiUsage: 'id', autoPolicy: 'id' });
     for (const table of ['notes', 'screenshots', 'analyses', 'aiTasks', 'aiUsage']) await old.table(table).put({ id: 'old', content: '保留', blob: new Blob(['original']) }); old.close(); const upgraded = new IdeaClipDB(name);
-    try { await upgraded.open(); expect(upgraded.verno).toBe(12); for (const table of ['notes', 'screenshots', 'analyses', 'aiTasks', 'aiUsage']) expect(await upgraded.table(table).get('old')).toBeTruthy(); expect(await upgraded.aiTemplates.count()).toBe(0); expect(await upgraded.autoPolicy.count()).toBe(0); } finally { await upgraded.delete(); }
+    try { await upgraded.open(); expect(upgraded.verno).toBe(13); for (const table of ['notes', 'screenshots', 'analyses', 'aiTasks', 'aiUsage']) expect(await upgraded.table(table).get('old')).toBeTruthy(); expect(await upgraded.aiTemplates.count()).toBe(0); expect(await upgraded.autoPolicy.count()).toBe(0); } finally { await upgraded.delete(); }
   });
   it('模板及多结构报告完整 ZIP 往返，恢复停用且不迁移授权/凭据', async () => {
     const skill = await saveSkill({ ...custom(), prompt: '分析 {{title}} api_key=private-template-value' }, db); const { engine, note } = await setup(skill); await engine.run((await engine.preview(note, [], skill.id)).id);

@@ -1,3 +1,4 @@
+import { checkOnlineHashes, rehashOnline } from '../research/online/backup';
 import Dexie from 'dexie';
 import { announceAIChange } from '../ai/events';
 import { pauseAutomatic } from '../automation/policy';
@@ -46,6 +47,7 @@ export async function exportBackup(database = db, options: OperationOptions = {}
           }
           return result;
         });
+        for(let index=0;index<portable.length;index++) portable[index]=await Dexie.waitFor(rehashOnline(table,portable[index]));
         chunks(portable, table, entries, sequence); counts[table] += rows.length; last = rows.at(-1)!.id;
         for (const entry of entries.slice(previousEntryCount)) { totalBytes += entry.blob.size; if (entry.blob.size > MAX_ENTRY) throw new Error('单项数据超过 8 MiB 安全上限。'); }
         if (totalBytes > MAX_ARCHIVE || entries.length >= MAX_ENTRIES) throw new Error('备份超过 512 MiB 或 10000 个文件安全上限。');
@@ -54,7 +56,7 @@ export async function exportBackup(database = db, options: OperationOptions = {}
   });
   if (linked.some(key => !keys.has(key))) throw new Error('当前数据存在缺失的笔记、采集或截图关联，无法生成可完整恢复的备份。原数据未更改。');
   if (Object.values(counts).reduce((a, b) => a + b, 0) > 100000) throw new Error('备份超过 10 万条记录安全上限。');
-  const manifest: Manifest = { format: 'IdeaClip', formatVersion: 4, databaseVersion: database.verno, createdAt: new Date().toISOString(), counts, entries: [] };
+  const manifest: Manifest = { format: 'IdeaClip', formatVersion: 5, databaseVersion: database.verno, createdAt: new Date().toISOString(), counts, entries: [] };
   for (const [index, entry] of entries.entries()) { check(options); options.progress?.(`正在校验备份 ${index + 1}/${entries.length}`); manifest.entries.push({ name: entry.name, size: entry.blob.size, sha256: await digest(entry.blob) }); }
   entries.push({ name: 'manifest.json', blob: new Blob([JSON.stringify(manifest)]) });
   return writeZip(entries, completed => { check(options); options.progress?.(`正在封装 ZIP ${completed}/${entries.length}`); });
@@ -121,7 +123,7 @@ export async function prepareBackup(file: Blob, options: OperationOptions = {}):
       check(options); const table = entry.name.split('/')[1] as BackupTable;
       const values: unknown = JSON.parse(await entry.blob.text()); if (!Array.isArray(values) || values.length > 10000) throw new Error('元数据记录格式无效。');
       for (const value of values) {
-        check(options); const row = portableRow(table, value);
+        check(options); await checkOnlineHashes(table,value); const row = await rehashOnline(table,portableRow(table, value));
         if (table === 'screenshots') {
           const name = object(value).image; if (typeof name !== 'string' || !/^images\/\d{6}\.(png|webp)$/.test(name) || imageUses.has(name)) throw new Error('图片关联无效或重复。');
           const image = byName.get(name); if (!image) throw new Error('备份缺少关联截图。'); imageUses.add(name);

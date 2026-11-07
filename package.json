@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:live": "playwright test --config playwright.live.config.ts",
-    "test:native": "playwright test --config playwright.native.config.ts"
+    "test:native": "playwright test --config playwright.native.config.ts",
+    "proxy:research": "node tools/research-proxy.ts"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",

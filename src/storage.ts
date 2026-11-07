@@ -25,7 +25,7 @@ export interface Note extends NoteDetails {
   updatedAt: number;
 }
 export interface Settings { id: 'general'; aiEnabled: boolean }
-export interface Analysis { projectId?: string; comparison?: import("./comparison/model").ComparisonReport; sources?: import("./comparison/model").Source[]; id: string; noteId: string; createdAt: number; content: string; report?: Report; skillReport?: import('./skills/model').SkillReport; template?: Skill; sourceUrl?: string; model?: string; provider?: string; endpointOrigin?: string; inputDigest?: string; inputRevision?: number; imageCount?: number }
+export interface Analysis { research?: import("./research/online/model").ResearchResult; projectId?: string; comparison?: import("./comparison/model").ComparisonReport; sources?: import("./comparison/model").Source[]; id: string; noteId: string; createdAt: number; content: string; report?: Report; skillReport?: import('./skills/model').SkillReport; template?: Skill; sourceUrl?: string; model?: string; provider?: string; endpointOrigin?: string; inputDigest?: string; inputRevision?: number; imageCount?: number }
 export interface Project extends Partial<ProjectDetails> { id: string; title: string; noteIds: string[]; createdAt: number; updatedAt: number }
 export interface Screenshot {
   id: string;
@@ -41,6 +41,11 @@ export interface Screenshot {
 }
 
 export class IdeaClipDB extends Dexie {
+  researchConfig!: Table<import('./research/online/model').ResearchConfig, string>;
+  researchUsage!: Table<import('./research/online/model').ResearchUsage, string>;
+  researchRuns!: Table<import('./research/online/model').ResearchRun, string>;
+  researchSources!: Table<import('./research/online/model').ResearchSource, string>;
+  researchReports!: Table<import('./research/online/model').ResearchResult, string>;
   researchPlans!: Table<import('./research/model').ResearchPlan, string>;
   notes!: Table<Note, string>;
   settings!: Table<Settings, string>;
@@ -90,6 +95,7 @@ export class IdeaClipDB extends Dexie {
     this.version(10).stores({ comparisonReports: 'id, createdAt' });
     this.version(11).stores({});
     this.version(12).stores({ researchPlans: 'id, updatedAt, createdAt' });
+    this.version(13).stores({ researchConfig:'id',researchUsage:'id, day, runId',researchRuns:'id, studyId, state, createdAt, [studyId+createdAt]',researchSources:'id, studyId, runId, collectedAt, [studyId+collectedAt]',researchReports:'id, studyId, createdAt, [studyId+createdAt]' });
   }
 }
 export const db = new IdeaClipDB();

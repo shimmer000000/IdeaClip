@@ -1,3 +1,4 @@
+import { OnlinePanel } from './online/OnlinePanel';
 import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../storage';
@@ -22,7 +23,7 @@ export function ResearchCenter() {
   function patchSource(index:number,patch:Partial<Evidence>){edit({...draft,sources:draft.sources.map((s,i)=>i===index?{...s,...patch}:s)});}
   async function save(){const next=await saveResearch(id,draft,record?.revision??0);setRecord(next);setDraft(currentDraft(next));setDirty(false);setMessage('研究计划已保存，历史版本已保留；未联网或调用 AI。');}
   function exportFile(){void run(async()=>{if(!record)throw new Error('请先保存研究计划。');if(!historical&&dirty)throw new Error('请先保存当前修改再导出，避免遗漏内容。');const url=URL.createObjectURL(new Blob([researchMarkdown(record,history||record.revision)],{type:'text/markdown;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=`IdeaClip-Research-v${history||record.revision}.md`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);setMessage('已导出研究 Markdown。');});}
-  return <div className="shell"><header><a href="notes.html">灵感库</a><a href="notes.html?projects">项目孵化中心</a><a href="settings.html">设置与备份</a></header><main className="research-main"><p className="eyebrow">RESEARCH WITH SOURCES</p><h1>深度研究</h1><p className="notice">第一阶段：本地研究方案与手动来源管理。不自动搜索、读取 URL、下载媒体或调用 AI；提纲由本地规则生成，不是 AI 调查结论。网页中的指令只作为文本保存，不会执行。</p>
+  return <div className="shell"><header><a href="notes.html">灵感库</a><a href="notes.html?projects">项目孵化中心</a><a href="settings.html">设置与备份</a></header><main className="research-main"><p className="eyebrow">RESEARCH WITH SOURCES</p><h1>深度研究</h1><p className="notice">本地研究提纲与手动资料管理无需联网。联网研究默认关闭，需配置代理并逐次确认；AI综合另行确认。网页中的指令只作为文本保存，不会执行。</p>
     <section className="panel"><h2>研究计划列表</h2><button disabled={busy} onClick={fresh}>新建研究</button><div className="research-list">{rows?.slice(0,limit).map(p=><button key={p.id} disabled={busy} onClick={()=>open(p)}>{p.title} · v{p.revision}</button>)}</div>{rows&&rows.length>limit&&<button onClick={()=>setLimit(n=>n+30)}>更多研究</button>}</section>
     {error&&<p role="alert" className="error">{error}</p>}{message&&<p role="status" className="notice">{message}</p>}
     <section className="panel"><h2>研究方案</h2><p>研究 ID：{id} · {record?`已保存 v${record.revision}`:'尚未保存'} · {dirty?'有未保存修改，离开前请保存':'本地记录'}。</p>
@@ -39,5 +40,6 @@ export function ResearchCenter() {
     <button className="primary" type="button" onClick={()=>{void run(save);}}>保存研究计划</button></fieldset>
     <div className="actions"><button disabled={busy||!record} onClick={exportFile}>导出研究 Markdown</button><button disabled={busy||!record} onClick={()=>{void run(async()=>{const latest=await db.researchPlans.get(id);if(!latest)throw new Error('研究已删除，当前输入仍保留。');open(latest);});}}>重新读取研究</button><button className="danger" disabled={busy||!record} onClick={()=>{if(confirm('删除研究计划及全部历史版本？原始灵感、项目和报告不会删除。'))void run(async()=>{await deleteResearch(id,record!.revision);setRecord(null);setDraft(emptyDraft());setId(crypto.randomUUID());setDirty(false);setHistory(0);setMessage('研究已删除，原始资料仍保留。');});}}>删除研究</button></div>
     <p className="muted">每次保存生成历史版本；相同内容重复保存不增加版本。最多 50 版、100 条资料、100 个关联，总计 2 MiB；超限明确拒绝。未保存编辑仅留当前页面，离开前会提醒。</p></section>
+    {record&&!dirty&&!historical&&<OnlinePanel key={record.id} studyId={record.id}/>}
   </main></div>;
 }
