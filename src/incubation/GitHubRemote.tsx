@@ -1,13 +1,18 @@
-import {useState} from 'react';
+import {useEffect,useState} from 'react';
 import type {Project} from '../storage';
 import type {Task} from './model';
-import {API_ORIGIN,refreshGitHub,referenceKey,REMOTE_ERRORS} from './github-sync';
-const labels={open:'开启',closed:'关闭',draft:'草稿',merged:'已合并',exists:'提交真实存在',issue_is_pr:'该编号实际是PR，不能作为普通Issue'};
+import {API_ORIGIN,refreshGitHub,REMOTE_ERRORS} from './github-sync';
+import {githubStatus,nextGitHubExpiry,GITHUB_KIND_LABELS,GITHUB_STATE_LABELS} from './github-status';
 export function RemoteStatus({task}:{task:Task}){
- const r=task.githubRemote;if(!r)return <p>未核实：尚未查询远程状态。</p>;
- let match=false;try{match=!!task.github&&r.key===referenceKey(task.github);}catch{/* Invalid association never becomes verified. */}
- const expired=!match||r.historical||Date.now()-r.attemptAt>15*60000;
- return <div><p>{expired?'历史结果已过期（或关联已变化）':'GitHub最近查询'} · {new Date(r.attemptAt).toLocaleString('zh-CN')} · 来源 api.github.com</p>{Object.entries(r.errors).map(([k,e])=><p key={k} role="status">查询失败 {k}：{e} · {REMOTE_ERRORS[e!]}</p>)}{(['issue','pr','commit'] as const).map(k=>{const i=r.items[k];return i&&<div key={k}><p>{k}：{!expired&&!r.errors[k]&&!r.errors.query&&Date.now()-i.checkedAt<15*60000?'远程已核实':'历史快照，当前未核实'} · {labels[i.state]}</p><p>最近成功查询：{new Date(i.checkedAt).toLocaleString('zh-CN')} · 远程更新时间：{i.updatedAt}</p><p>{i.sha} {i.summary}</p></div>;})}<p>远程状态不等于人工验收，不改变看板状态。</p></div>;
+ const [now,setNow]=useState(Date.now);
+ useEffect(()=>{
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  const update=()=>{clearTimeout(timer);const time=Date.now();setNow(time);const next=nextGitHubExpiry(task,time);if(next!==undefined)timer=setTimeout(update,Math.min(next-time,2147483647));};
+  update();window.addEventListener('focus',update);document.addEventListener('visibilitychange',update);
+  return()=>{clearTimeout(timer);window.removeEventListener('focus',update);document.removeEventListener('visibilitychange',update);};
+ },[task.githubRemote]);
+ const view=githubStatus(task,now);
+ return <div aria-label="GitHub远程状态"><p>最近查询时间：{view.attemptAt===undefined?'尚未查询':new Date(view.attemptAt).toLocaleString('zh-CN')}{view.attemptAt!==undefined&&' · 来源 api.github.com'}</p>{view.historical&&<p>历史结果已过期（超过15分钟、恢复快照或关联已变化），需手动刷新；不会自动联网。</p>}{!view.items.length&&<p>尚未查询：未关联Issue、PR或Commit。</p>}{view.queryError&&<p role="status">查询失败：{view.queryError} · {REMOTE_ERRORS[view.queryError]}</p>}{view.items.map(({kind,item,error,status})=><div key={kind} data-github-kind={kind}><p>{GITHUB_KIND_LABELS[kind]}：{status}{item&&` · ${status==='远程已核实'?'':'上次成功快照：'}${GITHUB_STATE_LABELS[item.state]}`}</p>{error&&<p role="status">{GITHUB_KIND_LABELS[kind]}安全错误：{error} · {REMOTE_ERRORS[error]}</p>}<p>最近成功时间：{item?new Date(item.checkedAt).toLocaleString('zh-CN'):'暂无'}</p>{item&&<><p>远程更新时间：{item.updatedAt}</p><p>{item.sha} {item.summary}</p></>}</div>)}<p>远程状态不等于人工验收，不改变看板状态。</p></div>;
 }
 export function GitHubRemote({projectId,task,reload,disabled=false}:{disabled?:boolean;projectId:string;task:Task;reload:()=>Promise<void>}){
  const [busy,setBusy]=useState(false),[error,setError]=useState('');if(!task.github)return null;

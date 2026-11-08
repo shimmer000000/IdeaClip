@@ -4,7 +4,7 @@ import { githubRepository, normalizeGitHub, REVIEW_STATES } from './github';
 export function GitHubLinks({value}:{value?:GitHubReference}) {
   if(!value)return <p>GitHub：未关联（可选）</p>;
   let g:GitHubReference;try{g=normalizeGitHub(value);}catch{return <p>GitHub 关联格式待核对，请编辑后保存。</p>;}
-  return <div className="task-github-links"><p>GitHub：格式已核对；远程状态未验证。</p>{[['仓库',g.repository],[`Issue #${g.issueNumber}`,g.issueUrl],[`PR #${g.prNumber}`,g.prUrl],[`Commit ${g.commitSha}`,g.commitUrl]].map(([label,url])=>url&&<p key={label}><a href={url} target="_blank" rel="noopener noreferrer">{label}</a></p>)}<p>关联时间：{g.linkedAt?new Date(g.linkedAt).toLocaleString('zh-CN'):'保存后记录'}</p></div>;
+  return <div className="task-github-links"><p>GitHub：链接格式已核对。</p>{[['仓库',g.repository],[`Issue #${g.issueNumber}`,g.issueUrl],[`PR #${g.prNumber}`,g.prUrl],[`Commit ${g.commitSha}`,g.commitUrl]].map(([label,url])=>url&&<p key={label}><a href={url} target="_blank" rel="noopener noreferrer">{label}</a></p>)}<p>关联时间：{g.linkedAt?new Date(g.linkedAt).toLocaleString('zh-CN'):'保存后记录'}</p></div>;
 }
 export function TaskDevelopment({task,workspace,change,confirmed,confirm}:{task:Task;workspace?:Workspace;change:(task:Task)=>void;confirmed:boolean;confirm:(value:boolean)=>void}) {
   let boundRepository='';try{boundRepository=githubRepository(workspace?.repository??'');}catch{/* A non-GitHub workspace is not a GitHub binding. */}
