@@ -101,3 +101,5 @@
 - schema14仅新增researchWorkflows；ZIP6兼容v1–v5，导入清空review/planHash/待读URL，状态暂停、步骤最多5、已完成标记退回审核之前，保留历史/项目草稿但无付费执行资格。原配置、密钥、预算仍不导出。向导最多100条历史，超限拒绝，不静默截断历史或覆盖人工资料。
 
 - 研究模型可通过本次Prepared中的随机证据编号选择原文，目录仅从脱敏且已审核的快照正文连续切片生成并计入发送预览/大小/预算；仅解析当前编号及其绑定sourceId，随后仍执行原Schema、sourceId、quote连续逐字匹配及original完全相等校验。未知/跨源/旧编号不猜测修复；报告持久化及ZIP只存解析后的原文，不迁移旧数据、不恢复付费授权。
+
+- 每次交付可安装的更新必须递增应用版本（修复递增patch），同步package.json、package-lock根及packages空键、public/manifest.json；弹窗/设置从package版本展示，不再硬编码初始版。build检查所有版本一致，不能用更新数据库版本代替应用版本。

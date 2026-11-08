@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFile, access } from 'node:fs/promises';
 const manifest = JSON.parse(await readFile('dist/manifest.json', 'utf8'));
+const pkg=JSON.parse(await readFile('package.json','utf8'));
+const lock=JSON.parse(await readFile('package-lock.json','utf8'));
+assert.equal(manifest.version,pkg.version,'插件与项目版本必须一致');
+assert.equal(lock.version,pkg.version,'锁文件版本必须一致');
+assert.equal(lock.packages[''].version,pkg.version);
 assert.equal(manifest.manifest_version, 3);
 assert.deepEqual(manifest.permissions, ['activeTab', 'scripting', 'storage']);
 assert.equal(manifest.background.type, 'module');

@@ -6,6 +6,8 @@
 
 ## 当前范围
 
+当前应用版本 **0.1.1**：Manifest、项目/锁文件及弹窗/设置展示同步；每次可安装更新递增版本。新研究请求限定claim/inference/hypothesis，逐字原文交由证据编号提供，避免重复生成original text；历史original报告与严格相等校验保留。Mock通过不代表新的真实模型调用成功，详见[0.1.1验收](docs/RELEASE-0.1.1.md)。
+
 2026-11-08补充：针对真实界面的research_quote_mismatch，新增本次快照证据编号目录，模型可选编号，由程序取回原文后执行原有严格Schema与逐字校验；不模糊修正、不补造证据，不重试旧请求。旧报告/ZIP结构不变，证据目录计入新预览的资料范围、大小及费用估算。详见[引用可靠性验收](docs/RESEARCH-EVIDENCE-VALIDATION.md)。
 
 2026-11-08：用户新截图明确报告 `research_items`，至少一栏不是1～8条的数组；尚不能从旧响应确定具体栏目及数量。已加强空栏目提示与安全定位，并修复公开HTML解析时触发的CSP事件属性告警；保留严格Schema和逐字引用，不自动重试。详见 [CSP与栏目边界补充验收](docs/RESEARCH-CSP-ITEMS-VALIDATION.md)。
