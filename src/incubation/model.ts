@@ -3,7 +3,9 @@ export const STAGES={research:'灵感研究',validation:'需求验证',mvp:'MVP 
 export const STATUSES={todo:'待处理',doing:'进行中',done:'已完成'};
 export interface Reference {kind:'note'|'analysis'|'comparison';id:string;title:string}
 export interface Workspace {repository:string;directory:string;scope:string[]}
-export interface Task {kind?:'development'|'research'|'validation';id:string;title:string;priority:'high'|'normal'|'low';status:keyof typeof STATUSES;due:string;notes:string;noteIds:string[];milestone:string;acceptance:string;reviewed:boolean;importKey?:string}
+export interface GitHubReference {repository:string;issueNumber?:number;issueUrl?:string;prNumber?:number;prUrl?:string;commitSha?:string;commitUrl?:string;linkedAt:number}
+export interface TaskReview {state:'pending'|'awaiting'|'passed'|'failed';notes:string;tests:string}
+export interface Task {github?:GitHubReference;codexSummary?:string;acceptanceReview?:TaskReview;kind?:'development'|'research'|'validation';id:string;title:string;priority:'high'|'normal'|'low';status:keyof typeof STATUSES;due:string;notes:string;noteIds:string[];milestone:string;acceptance:string;reviewed:boolean;importKey?:string}
 export interface Plan {id:string;createdAt:number;model:string;report:SkillReport;imported:string[];templateId?:string;templateVersion?:string;projectRevision?:number;sources?:{id:string;title:string;revision:number;hash:string}[]}
 export interface Details {projectPurpose?:'test'|'development'|'research';workspace?:Workspace;researchRisks?:string;researchOrigin?:{studyId:string;reportId:string;reportHash:string};description:string;targetUsers:string;needs:string;businessModel:string;mvp:string;costs:string;validationGoal:string;stage:keyof typeof STAGES;revision:number;refs:Reference[];tasks:Task[];history:{id:string;from:keyof typeof STAGES;to:keyof typeof STAGES;at:number}[];plans:Plan[]}
 export const FIELDS={description:'项目描述',targetUsers:'目标用户',needs:'核心需求',businessModel:'商业模式假设',mvp:'MVP 范围',costs:'预计成本',validationGoal:'验证目标'};

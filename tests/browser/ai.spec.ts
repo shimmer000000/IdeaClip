@@ -160,9 +160,14 @@ test('IC-011：手动项目、阶段历史、任务看板与列表、审核后�
   await page.getByRole('button',{name:'保存任务',exact:true}).click();
   await expect(page.getByRole('button',{name:'复制 Codex 指令',exact:true})).toBeDisabled();
   await page.getByRole('button',{name:'编辑任务',exact:true}).click();
-  await page.getByLabel('任务状态',{exact:true}).selectOption('done');
+  await page.getByLabel('开发验收状态',{exact:true}).selectOption('passed');
+  await page.getByLabel('验收说明',{exact:true}).fill('合成数据测试人工记录');
+  await page.getByLabel('开发验收测试结果',{exact:true}).fill('本机Mock保存通过，未开展真实访谈');
+  await page.getByRole('checkbox',{name:'我已人工核对本任务交付、验收说明和测试结果，确认本次验收结论'}).check();
   await page.getByRole('checkbox',{name:'我已审核此任务及其验收标准，可复制开发指令'}).check();
   await page.getByRole('button',{name:'保存任务',exact:true}).click();
+  await expect(page.getByText('完成 0 / 1，进度 0%',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'人工验收通过，设为已完成'}).click();
   await expect(page.getByText('完成 1 / 1，进度 100%',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'任务列表模式',exact:true}).click();await expect(page.locator('.project-list')).toBeVisible();
   await page.bringToFront();await page.evaluate(()=>{const write=navigator.clipboard.writeText.bind(navigator.clipboard);navigator.clipboard.writeText=async(text)=>{await write(text);(globalThis as unknown as {copiedText:string}).copiedText=text;};});await page.getByRole('button',{name:'复制 Codex 指令',exact:true}).click();
