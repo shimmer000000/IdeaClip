@@ -153,7 +153,7 @@ test('IC-011：手动项目、阶段历史、任务看板与列表、审核后�
   await page.getByText('阶段变更历史与来源引用',{exact:true}).click();
   await expect(page.getByText(/灵感研究 → 需求验证/)).toBeVisible();
   await page.getByRole('button',{name:'新增任务',exact:true}).click();
-  await page.getByLabel('任务标题',{exact:true}).fill('访谈目标用户');
+  await page.getByLabel('任务标题',{exact:true}).fill('访谈目标用户');await page.getByLabel('任务类型',{exact:true}).selectOption('research');
   await page.getByLabel('任务截止日期',{exact:true}).fill('2026-11-30');
   await page.getByLabel('任务关联灵感',{exact:true}).fill('n-00005');
   await page.getByLabel('任务验收标准',{exact:true}).fill('记录三次反馈');
@@ -167,7 +167,7 @@ test('IC-011：手动项目、阶段历史、任务看板与列表、审核后�
   await page.getByRole('button',{name:'任务列表模式',exact:true}).click();await expect(page.locator('.project-list')).toBeVisible();
   await page.bringToFront();await page.evaluate(()=>{const write=navigator.clipboard.writeText.bind(navigator.clipboard);navigator.clipboard.writeText=async(text)=>{await write(text);(globalThis as unknown as {copiedText:string}).copiedText=text;};});await page.getByRole('button',{name:'复制 Codex 指令',exact:true}).click();
   await expect(page.getByRole('status')).toContainText('已复制中文 Codex 指令');
-  const clipboard=await page.evaluate(()=>(globalThis as unknown as {copiedText:string}).copiedText);for(const label of ['项目背景','当前目标','技术要求','任务范围','验收标准','测试要求','Git 提交要求'])expect(clipboard).toContain(label);
+  const clipboard=await page.evaluate(()=>(globalThis as unknown as {copiedText:string}).copiedText);for(const label of ['任务目标','输入资料','执行步骤','禁止事项','验收标准','测试要求','交付结果'])expect(clipboard).toContain(label);
   await page.getByRole('button',{name:'看板模式',exact:true}).click();await expect(page.locator('.project-board')).toBeVisible();
   await page.locator('.project-board').screenshot({path:info.outputPath('incubation-board.png')});
   const projects=await page.evaluate(async()=>{const d=await new Promise<IDBDatabase>(r=>{const q=indexedDB.open('ideaclip');q.onsuccess=()=>r(q.result);});const rows=await new Promise<{id:string}[]>(r=>{const q=d.transaction('projects').objectStore('projects').getAll();q.onsuccess=()=>r(q.result);});d.close();return rows;});
