@@ -1,5 +1,7 @@
 # IdeaClip 路线图
 
+**0.2.3 本地Codex单任务与回收（2026-11-09）**：按用户决定取消额外OS隔离建设，改为受信任Windows工作区。独立CLI固定普通参数、预览/一次性授权/任务与Git绑定、排他锁、取消与失败停止、只读范围后检、关联交付v2回收；浏览器不启动本机命令，不自动验收/完成。无依赖或数据库迁移，保留旧Mock回归和全部历史。仅Mock与合成进程验收，真实模型执行待单独批准；无OS隔离保证。见[说明](CODEX-LOCAL-TASK.md)及[验收](CODEX-LOCAL-TASK-VALIDATION.md)。
+
 **0.2.2 受控执行器与隔离测试（2026-11-09）**：独立本地控制器只创建自有合成Git仓库，固定WASM+单一文件broker，限时/取消终止子进程、任务绑定结果及失败不重试。当前Windows未验证可承载Codex的OS文件/网络隔离，真实执行固定禁止；保留一次性授权和浏览器Mock，不接入Agent Autoloop。823项单元通过（1项固定端口跳过），60项相关Chrome回归、最终57项专项与7项Chrome复测，原Chrome0.2.2、旧记录、阻塞/未授权拒绝通过。无数据库/ZIP/权限迁移。见[协议](CONTROLLED-EXECUTOR.md)及[验收](CONTROLLED-EXECUTOR-VALIDATION.md)。
 
 **0.2.1 单次授权与安全预检（2026-11-09）**：本地独立策略绑定项目/任务/仓库/目录/范围/分支，真实Git/CLI只读探测、目录子级链接与有界元数据扫描；内存对象身份防JSON伪造，墙钟+单调钟到期、单次先消费、变化/失败/取消/超时不重试。当前任务浏览器明确Mock预演，不连接执行服务或运行Codex。806项单元通过（1项固定端口跳过）、59项相关Chrome及最终6项交接复测、类型/构建通过；Windows-MCP原Chrome0.2.1、旧历史、未授权拒绝、单次/重复消费、重载授权清除及人工状态独立通过。无新依赖/迁移，worktree保守拒绝。见[协议](CODEX-EXECUTION-SAFETY.md)及[验收](CODEX-EXECUTION-SAFETY-VALIDATION.md)。

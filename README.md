@@ -6,6 +6,8 @@
 
 ## 当前范围
 
+**0.2.3：受信任 Windows 本地 Codex 单任务与结果回收。** 用户已取消额外 OS 隔离方案；新一次性 `handoff:task` CLI 复用 Git/范围预检，独立短期授权后使用普通 `workspace-write/on-request` 参数，失败不自动重试或回滚；Git 后检通过才输出关联交付v2，仍须人工导入与验收。本轮只验证 Mock 和固定 Node 合成进程，未调用真实 Codex 模型。预检与后检不提供 OS 级隔离。见[操作说明](docs/CODEX-LOCAL-TASK.md)和[验收记录](docs/CODEX-LOCAL-TASK-VALIDATION.md)。以下版本记录保留当时范围。
+
 最新真实验收（2026-11-08）：用户Chrome截图显示DeepSeek商业机会报告已保存并进入第7步，历史中有deepseek-flash报告及中文内容、来源和证据。报告重开、实际Markdown下载及本次账单仍待核对，不重复调用。详见[真实截图补充](docs/RELEASE-0.1.1.md#用户真实截图补充2026-11-08)；下文先前“待真实成功”的描述保留为历史记录。
 
 当前应用版本 **0.2.2**：新增[受控执行器与隔离测试](docs/CONTROLLED-EXECUTOR.md)。仅工厂新建临时Git样本运行固定WASM能力程序；复用单次本地Mock授权、Git/包/范围快照，能力拒绝发生在执行期间。真实Codex的OS文件/网络隔离尚未核实，入口固定阻塞；浏览器无系统命令桥接，无新依赖/权限/数据库迁移，不改变人工验收或费用历史。实测见[0.2.2验收](docs/CONTROLLED-EXECUTOR-VALIDATION.md)。

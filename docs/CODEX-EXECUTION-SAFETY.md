@@ -1,5 +1,7 @@
 # 单次授权与安全预检协议 · 0.2.1
 
+**0.2.3当前入口**：[受信任Windows本地单任务说明](CODEX-LOCAL-TASK.md)。用户取消额外OS隔离方案；下文是保留的0.2.1计时器Mock协议，其禁止真实执行的结论仅适用于旧Mock入口，不代表新增本地CLI已获具体任务授权。任务包/ZIP仍不携带执行授权。
+
 0.2.2补充：[受控执行器协议](CONTROLLED-EXECUTOR.md)。下文保留0.2.1计时器Mock设计；新增独立本地固定WASM合成执行器不改变本门禁授权语义，仍禁止真实Codex执行。
 
 本阶段只提供**一次性Mock授权门禁**。没有真实Codex执行器、后台服务、Agent Autoloop接口、自动付费或自动验收。任务包v1/交付v2保持不变，包内`executionAuthorized`仍必须为false。
