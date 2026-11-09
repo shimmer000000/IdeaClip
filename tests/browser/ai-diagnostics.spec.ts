@@ -2,6 +2,7 @@ import {test,expect,type Page} from '@playwright/test';
 import {collectionHarness} from './collection-harness';
 import {seedLibrary} from './library-fixture';
 import {mockCompletion,mockReport} from '../ai-fixture';
+import {BUILTINS,LEAN_ID} from '../../src/skills/model';
 const key='synthetic-diagnostic-test-key',secret='PRIVATE_MODEL_BODY_DO_NOT_EXPORT',endpoint='http://127.0.0.1:45678/mock/chat/completions';
 let h:Awaited<ReturnType<typeof collectionHarness>>,page:Page,settings:Page,calls=0,response:unknown,lastRequest:any;
 test.beforeEach(async()=>{
@@ -11,6 +12,16 @@ test.beforeEach(async()=>{
  page=await h.context.newPage();await page.goto(`chrome-extension://${h.extensionId}/analysis.html?noteId=n-00005`);
 });
 test.afterEach(async()=>{await h.context.close();});
+function leanReport(){const skill=BUILTINS.find(s=>s.id===LEAN_ID)!;return {schemaVersion:2,sections:Object.fromEntries(skill.sections.map(s=>[s.key,[{kind:'hypothesis',text:'资料不足，先核验需求再决定投入。',evidence:null}]]))} as {schemaVersion:number;sections:Record<string,Record<string,unknown>[]>};}
+for(const extra of [false,true])test('0.2.7低成本首栏第3条'+(extra?'多余字段':'缺少evidence')+'：精确诊断、脱敏重开且一次请求',async()=>{
+ await page.getByLabel('选择分析模板',{exact:true}).selectOption(LEAN_ID);const r=leanReport(),a=r.sections.constraints;a.push({...a[0]},{...a[0]});if(extra)a[2].PRIVATE_LEAN_FIELD=secret;else delete a[2].evidence;response=mockCompletion(r);await run();await expect(page.getByRole('alert')).toContainText('ai_report_claim');
+ await page.getByRole('button',{name:'查看诊断报告',exact:true}).click();const report=page.locator('[data-ai-diagnostic-report]');await expect(report).toContainText(extra?'additionalProperties':'required');await expect(report).toContainText('sections.column-1.item-3.'+(extra?'字段已隐藏':'evidence'));await expect(report).toContainText('低成本创业可行性评估');await expect(report).toContainText('1.0.1');await report.getByRole('button',{name:'复制脱敏诊断摘要'}).click();const copied=await page.evaluate(()=>(window as any).diagnosticClipboard);for(const s of ['PRIVATE_LEAN_FIELD',secret,key])expect(copied).not.toContain(s);await expect(page.locator('.ai-report')).toHaveCount(0);expect(calls).toBe(1);
+ await page.close();page=await h.context.newPage();await page.goto(`chrome-extension://${h.extensionId}/analysis.html?noteId=n-00005`);await page.getByRole('button',{name:'查看诊断报告',exact:true}).click();await expect(page.locator('[data-ai-diagnostic-report]')).toContainText(extra?'additionalProperties':'required');expect(calls).toBe(1);
+});
+test('0.2.7低成本六栏JSON完整示例、合法报告保存与重开',async()=>{
+ await page.getByLabel('选择分析模板',{exact:true}).selectOption(LEAN_ID);response=mockCompletion(leanReport());await run();await expect(page.getByRole('heading',{name:'低成本创业可行性评估报告',exact:true})).toBeVisible();await expect(page.locator('.ai-report > section')).toHaveCount(6);expect(lastRequest.messages[0].content).toContain('低成本JSON结构示例：');expect(lastRequest.messages[0].content).toContain('evidence也不能省略');expect(calls).toBe(1);
+ await page.close();page=await h.context.newPage();await page.goto(`chrome-extension://${h.extensionId}/analysis.html?noteId=n-00005`);await expect(page.locator('.ai-report > section')).toHaveCount(6);await expect(page.locator('.ai-report')).toContainText('版本 1.0.1');expect(calls).toBe(1);
+});
 test('0.2.5简洁15栏含逐字证据：明确预算、取消零请求、成功保存与重开',async()=>{
  const r=mockReport();r.sections.summary=[{kind:'fact',text:'这是作者原始资料陈述，未独立核验。',evidence:'正文5：有价值的网页内容。'}];response=mockCompletion(r);
  await expect(page.locator('[data-business-budget]')).toContainText('设置 8192；模板上限 4096；本次使用 4096');await page.getByRole('button',{name:'AI 分析：预览发送内容'}).click();const dialog=page.getByRole('dialog',{name:'本次 AI 分析确认'});await expect(dialog.locator('[data-business-budget]')).toContainText('4096');await expect(dialog).toContainText('版本 1.0.1');await dialog.getByRole('button',{name:'取消，不发送'}).click();expect(calls).toBe(0);
