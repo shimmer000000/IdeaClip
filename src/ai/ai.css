@@ -66,3 +66,8 @@
 .skill-manager label { display: grid; gap: 8px; margin: 12px 0; }
 .skill-manager pre { white-space: pre-wrap; max-height: 320px; overflow: auto; }
 .skill-manager summary { cursor: pointer; font-weight: 600; margin: 12px 0; }
+
+.ai-preset-box { background: #f3f7ef; border: 1px solid #dce3d6; border-radius: 12px; padding: 20px; margin-bottom: 24px; font-size: 16px; line-height: 1.8; overflow-wrap: anywhere; }
+.ai-preset-box label { display: grid; gap: 8px; font-weight: 600; }
+.ai-preset-box select { margin-bottom: 12px; font-size: 16px; width: 100%; }
+.ai-preset-box p { margin: 12px 0 0; }
