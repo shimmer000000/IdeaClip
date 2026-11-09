@@ -1,5 +1,6 @@
 import { SECTIONS, SYSTEM_PROMPT, type Claim } from '../ai/report';
 import claimSchema from '../ai/generated/schema.json' with { type: 'json' };
+import {ReportValidationError,detailOf} from '../ai/report-errors';
 
 export interface SkillSection { key: string; label: string; instruction: string }
 export interface Skill { id: string; version: string; name: string; description: string; scenario: string; inputRequirements: string; prompt: string; sections: SkillSection[]; maxOutput: number; display: 'sections' | 'codex'; enabled: boolean; builtin: boolean; updatedAt: number }
@@ -48,14 +49,34 @@ export function skillSystem(skill: Skill) { return SYSTEM_PROMPT.slice(0, SYSTEM
 export function renderInstructions(skill: Skill, input: Record<typeof VARIABLES[number], string>) {
   return skill.prompt.replace(/\{\{([^{}]+)\}\}/g, (_match, key: typeof VARIABLES[number]) => JSON.stringify(input[key]));
 }
-export function validateSkillReport(value: unknown, skill: Skill, source?: string): SkillReport {
-  validateSkill(skill); const r = record(value); const sections = record(r.sections); const keys = skill.sections.map(s => s.key);
-  if (Object.keys(r).length !== 2 || !('schemaVersion' in r) || r.schemaVersion !== (skill.id === BUSINESS_ID ? 1 : 2) || Object.keys(sections).length !== keys.length || keys.some(k => !Object.hasOwn(sections, k))) throw new Error('报告未通过模板 Schema 校验。');
-  for (const key of keys) {
-    const claims = sections[key]; if (!Array.isArray(claims) || !claims.length || claims.length > 8) throw new Error('报告栏目条目数量无效。');
-    for (const raw of claims) { const c = record(raw); if (Object.keys(c).length !== 3 || !['kind', 'text', 'evidence'].every(k => Object.hasOwn(c, k)) || !['fact', 'inference', 'hypothesis'].includes(String(c.kind)) || typeof c.text !== 'string' || !c.text.trim() || [...c.text].length > 3000 || !(c.evidence === null || typeof c.evidence === 'string' && [...c.evidence].length <= 1000) || c.kind === 'fact' && (typeof c.evidence !== 'string' || !c.evidence.trim() || source !== undefined && !source.includes(c.evidence))) throw new Error('报告条目或来源证据无效。'); }
+export function validateSkillReportSchema(value: unknown, skill: Skill): SkillReport {
+  validateSkill(skill);
+  const object=(v:unknown,field:string)=>{if(!v||typeof v!=='object'||Array.isArray(v))throw new ReportValidationError('ai_report_shape',undefined,detailOf(v,field,'type','object'));return v as Record<string,unknown>;};
+  const r=object(value,'报告根节点'),sections=object(r.sections,'sections'),keys=skill.sections.map(s=>s.key);
+  if(!Object.hasOwn(r,'schemaVersion')||r.schemaVersion!==(skill.id===BUSINESS_ID?1:2))throw new ReportValidationError('ai_report_version',undefined,detailOf(r.schemaVersion,'schemaVersion','const',skill.id===BUSINESS_ID?'1':'2'));
+  if(Object.keys(r).length!==2||Object.keys(sections).length!==keys.length||keys.some(k=>!Object.hasOwn(sections,k)))throw new ReportValidationError('ai_report_fields',undefined,detailOf(sections,'sections','required/additionalProperties','模板规定栏目，不含额外字段'));
+  for (const [index,key] of keys.entries()) {
+    const field='sections.column-'+(index+1),claims=sections[key];if(!Array.isArray(claims)||!claims.length||claims.length>8)throw new ReportValidationError('ai_report_items',index,detailOf(claims,field,!Array.isArray(claims)?'type':!claims.length?'minItems':'maxItems','array，1～8条',index));
+    for(const [itemIndex,raw]of claims.entries()){
+      const at=field+'.item-'+(itemIndex+1);
+      if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new ReportValidationError('ai_report_claim',index,detailOf(raw,at,'type','object',index,itemIndex));
+      const c=raw as Record<string,unknown>;
+      if(Object.keys(c).length!==3||!['kind','text','evidence'].every(k=>Object.hasOwn(c,k)))throw new ReportValidationError('ai_report_claim',index,detailOf(c,at,'required/additionalProperties','kind / text / evidence',index,itemIndex));
+      if(!['fact','inference','hypothesis'].includes(String(c.kind)))throw new ReportValidationError('ai_report_claim',index,detailOf(c.kind,at+'.kind','enum','fact / inference / hypothesis',index,itemIndex));
+      if(typeof c.text!=='string'||!c.text.trim()||[...c.text].length>3000)throw new ReportValidationError('ai_report_text',index,detailOf(c.text,at+'.text',typeof c.text!=='string'?'type':!c.text.trim()?'nonempty':'maxLength','非空string，最多3000字符',index,itemIndex));
+      if(!(c.evidence===null||typeof c.evidence==='string'&&[...c.evidence].length<=1000))throw new ReportValidationError('ai_report_evidence',index,detailOf(c.evidence,at+'.evidence',typeof c.evidence!=='string'?'type':'maxLength','string/null，最多1000字符',index,itemIndex));
+    }
   }
   return value as SkillReport;
+}
+export function validateSkillReport(value:unknown,skill:Skill,source?:string):SkillReport{
+ const report=validateSkillReportSchema(value,skill);
+ for(const [index,s]of skill.sections.entries())for(const [itemIndex,c]of report.sections[s.key].entries())if(c.kind==='fact'){
+  const field=`sections.column-${index+1}.item-${itemIndex+1}.evidence`;
+  if(!c.evidence?.trim())throw new ReportValidationError('ai_report_evidence_required',index,detailOf(c.evidence,field,'nonempty','非空原文证据',index,itemIndex));
+  if(source!==undefined&&!source.includes(c.evidence))throw new ReportValidationError('ai_report_quote_mismatch',index,detailOf(c.evidence,field,'substring','连续逐字匹配，不归一化',index,itemIndex));
+ }
+ return report;
 }
 const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/[\\`*_{}\[\]()#!|]/g, '\\$&');
 export function skillMarkdown(report: SkillReport, skill: Skill, model: string, date: number) {

@@ -14,7 +14,7 @@ it('IC-016：DeepSeek 保活空行和跨 UTF-8 分块的中文 JSON，保留实�
   }), { headers: { 'Content-Type': 'application/json' } }));
   const config = { ...DEFAULT_CONFIG, provider: 'deepseek' as const, endpoint: PROVIDERS.deepseek, model: 'deepseek-flash', outputParameter: 'max_tokens' as const };
   const result = await chatTransport(fetcher).complete(config, 'synthetic-ic016-ai-token', [{ role: 'user', content: '合成资料' }], new AbortController().signal);
-  expect(result).toEqual({ text: content, inputTokens: 37, outputTokens: 19 });
+  expect(result).toEqual({ text: content, inputTokens: 37, outputTokens: 19, finishReason: 'stop' });
   expect(fetcher).toHaveBeenCalledTimes(1);
   const [url, init] = fetcher.mock.calls[0];
   expect(url).toBe(PROVIDERS.deepseek);

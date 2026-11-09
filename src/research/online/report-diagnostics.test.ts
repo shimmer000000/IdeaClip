@@ -39,7 +39,7 @@ const cases:[string,(r:Report)=>void,string][]=[
  ['超长text',r=>{r.sections.conclusion[0].text='中'.repeat(3001);},'research_text'],
  ['控制字符',r=>{r.sections.conclusion[0].text='private\u0000body';},'research_text'],
  ['超长quote',r=>{r.sections.evidence[0].quote='x'.repeat(1001);},'research_text'],
- ['伪造sourceId',r=>{r.sections.evidence[0].sourceId='invented-private-id';},'research_source'],
+ ['伪造sourceId',r=>{r.sections.evidence[0].sourceId='invented-private-id';},'research_source_missing'],
  ['缺失逐字quote',r=>{r.sections.evidence[0].quote=null;},'research_quote_required'],
  ['合并换行',r=>{r.sections.evidence[0].quote=source.content.replaceAll('\n',' ');},'research_quote_mismatch'],
  ['Unicode规范化不逐字',r=>{r.sections.evidence[0].quote=source.content.normalize('NFD');},'research_quote_mismatch'],

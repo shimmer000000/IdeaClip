@@ -70,7 +70,7 @@ describe('正文质量与来源段落', () => {
   });
   it('schema7 升级8保留旧采集、笔记、任务和预算，旧采集不被伪造为已评估', async () => {
     const name = 'quality-v7-' + crypto.randomUUID(); const old = new Dexie(name); old.version(7).stores({ notes: 'id', contentCaptures: 'id', aiTasks: 'id, &dedupeKey, state', aiUsage: 'id' }); await old.table('notes').put({ id: 'old', body: '旧感悟' }); await old.table('contentCaptures').put({ id: 'old-capture', text: '原文' }); await old.table('aiTasks').put({ id: 'task', dedupeKey: 'old:1', state: 'failed' }); await old.table('aiUsage').put({ id: 'usage', reservedMicros: 123 }); old.close(); const database = new IdeaClipDB(name);
-    try { await database.open(); expect(database.verno).toBe(14); expect((await database.notes.get('old'))?.body).toBe('旧感悟'); expect((await database.contentCaptures.get('old-capture'))?.quality).toBeUndefined(); expect((await database.aiTasks.get('task'))?.state).toBe('failed'); expect((await database.aiUsage.get('usage'))?.reservedMicros).toBe(123); } finally { await database.delete(); }
+    try { await database.open(); expect(database.verno).toBe(15); expect((await database.notes.get('old'))?.body).toBe('旧感悟'); expect((await database.contentCaptures.get('old-capture'))?.quality).toBeUndefined(); expect((await database.aiTasks.get('task'))?.state).toBe('failed'); expect((await database.aiUsage.get('usage'))?.reservedMicros).toBe(123); } finally { await database.delete(); }
   });
   it('定位指纹明确依赖正文，不作为安全签名', () => { expect(textFingerprint(qualityText)).not.toBe(textFingerprint(qualityText + 'x')); });
 });

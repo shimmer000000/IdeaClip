@@ -7,24 +7,26 @@ import { full, storePlan } from '../incubation/repository';
 import type { Note } from '../storage';
 import Dexie from 'dexie';
 import { selectedIds, noteHash, COMPARISON_SCHEMA, validateComparison, comparisonMarkdown, type Source } from '../comparison/model';
-import { BUILTINS, BUSINESS_ID, skillSignature, skillSystem, renderInstructions, validateSkillReport, skillMarkdown, type Skill } from '../skills/model';
+import { BUILTINS, BUSINESS_ID, skillSignature, skillSystem, renderInstructions, validateSkillReport, validateSkillReportSchema, skillMarkdown, type Skill } from '../skills/model';
 import { getSkill, preferences } from '../skills/repository';
 import { liveQuery } from 'dexie';
 import { db, getSettings, type Analysis, type IdeaClipDB } from '../storage';
 import { redact } from '../backup/model';
 import { digest } from '../backup/zip';
 import { getCredential, hasPermission, validateConfig, type AIConfig } from './config';
-import { markdown, validateReport } from './report';
+import { markdown, validateReport,validateReportSchema } from './report';
 import { chatTransport, RequestFailure, safeTokenUsage, type TokenUsage, type AITransport, type Completion } from './transport';
 import { ResearchReportError } from '../research/online/report-errors';
 import { authorizeAutomatic } from '../automation/policy';
 import { QueueFailure, type AutomaticAuthority } from '../automation/model';
+import {ReportValidationError} from './report-errors';
+import {makeDiagnostic,saveDiagnostic,markDiagnosticSaved,unknownChecks,type AIDiagnostic} from './diagnostics';
 
 export type AIStage='authorization'|'reservation'|'transport'|'json'|'schema'|'evidence'|'validator'|'format'|'storage';
 export interface AIUsage { id: string; noteId: string; day: string; createdAt: number; model: string; status: 'reserved' | 'succeeded' | 'failed' | 'cancelled'; reservedMicros: number; estimatedInput: number; maxOutput: number; inputTokens?: number; outputTokens?: number; errorCode?: string; errorStage?:AIStage; responseReceived?:boolean; reportSaved?:boolean }
 export interface Preview { workflowId?:string; researchId?:string; researchSources?:ResearchSource[]; projectId?: string; sources?: Source[]; id: string; noteId: string; createdAt: number; config: AIConfig; title: string; content: string; body: string; url: string; imageIds: string[]; inputTokensUpper: number; costMicros: number; inputDigest: string; revision: number; template: Skill; systemPrompt: string; requestText: string }
 interface Prepared { evidence?:EvidenceRef[]; workflowHash?:string; researchHash?:string; rawResearch?:ResearchSource[]; preview: Preview; images: Blob[]; source: string; credentialVersion: string | null; templateSignature: string; rawSources?: Source[]; projectHash?: string }
-export interface AnalysisResult { analysis: Analysis; saved: boolean }
+export interface AnalysisResult { analysis: Analysis; saved: boolean;diagnostic?:AIDiagnostic }
 interface Dependencies { transport: AITransport; credential: typeof getCredential; permission: typeof hasPermission; lock: <T>(action: () => Promise<T>, signal: AbortSignal) => Promise<T>; now: () => number }
 const dependencies = (): Dependencies => ({ transport: chatTransport(), credential: getCredential, permission: hasPermission, now: Date.now, lock: async (action, signal) => { if (!globalThis.navigator?.locks) throw new RequestFailure('lock', '此环境不支持安全请求队列，请在 Chrome / Edge 扩展中运行。'); return navigator.locks.request('ideaclip-manual-ai', { signal }, action); } });
 function active(signal: AbortSignal) { if (signal.aborted) throw new RequestFailure('cancelled', 'AI 请求已取消；服务器可能已产生费用，本地预算预留不会自动退回。'); }
@@ -111,7 +113,8 @@ export class AIEngine {
     if (!prepared) throw new RequestFailure('consent', '本次确认已使用或失效，请重新预览并确认费用。');
     const { preview, images, source } = prepared; const controller = new AbortController(); this.pending.set(previewId, controller);
     let usage: AIUsage | null = null; let reserved = false; let timer: ReturnType<typeof setTimeout> | undefined; let timedOut = false;
-    let phase:AIStage='authorization';let responseReceived=false;let receivedUsage:TokenUsage={};
+    let phase:AIStage='authorization';let responseReceived=false;let receivedUsage:TokenUsage={};let finishReason:Completion['finishReason'];let credentialForRedaction='';const checks=unknownChecks();checks.reportSaved=false;checks.inMemoryReport=false;
+    const recordDiagnostic=async(error:unknown)=>{const diagnostic=makeDiagnostic({noteId:preview.noteId,attemptId:preview.id,at:this.dependencies.now(),analysisType:preview.researchId?'research':preview.projectId?'project':preview.sources?'comparison':'note',template:preview.template,model:credentialForRedaction&&preview.config.model.includes(credentialForRedaction)?'未知':preview.config.model,error,stage:phase,checks,finishReason,usage:receivedUsage,reservedMicros:reserved?preview.costMicros:0,estimatedInput:preview.inputTokensUpper,maxOutput:preview.config.maxOutput});await saveDiagnostic(diagnostic,this.database).catch(()=>{});return diagnostic;};
     const checkAuthority = async () => {
       if(preview.researchId){if(preview.workflowId){const w=await assertReview(preview.workflowId,preview.researchSources!.map(s=>s.id),this.database);if(await Dexie.waitFor(snapshotHash(w))!==prepared.workflowHash)throw new Error('向导审核已改变，请重新确认。');}if(authority)throw new RequestFailure('consent','研究综合只允许逐次手动确认。');const plan=await this.database.researchPlans.get(preview.researchId);if(!plan||await Dexie.waitFor(digest(new Blob([JSON.stringify(plan)])))!==prepared.researchHash)throw new RequestFailure('stale','研究计划已变化，请重新预览。');for(const raw of prepared.rawResearch??[]){const source=await this.database.researchSources.get(raw.id);let normalized;try{normalized=validateSource(source);}catch{throw new RequestFailure('stale','研究来源已变化、损坏或删除。');}if(JSON.stringify(normalized)!==JSON.stringify(raw))throw new RequestFailure('stale','研究来源已变化或删除。');}return;}
       if(preview.projectId){ const row=await this.database.projects.get(preview.projectId); if(!row || await Dexie.waitFor(digest(new Blob([JSON.stringify(row)])))!==prepared.projectHash)throw new RequestFailure('stale','项目已变化或删除，请重新预览。'); }
@@ -134,6 +137,7 @@ export class AIEngine {
         const current = await this.database.aiConfig.get('manual');
         if (!current || current.version !== preview.config.version || this.dependencies.now() - preview.createdAt > 10 * 60000) throw new RequestFailure('stale', '配置已改变或确认超过 10 分钟，请重新预览。');
         const credential = await this.dependencies.credential(preview.config.endpoint);
+        credentialForRedaction=credential?.value??'';
         if ((credential?.version ?? null) !== prepared.credentialVersion || !(await this.dependencies.permission(preview.config.endpoint))) throw new RequestFailure('stale', '凭据或服务商授权已改变，请重新预览。');
         const note = preview.projectId || preview.researchId ? {revision:preview.revision} : await this.database.notes.get(preview.noteId);
         if (!note || note.revision !== preview.revision || (!preview.projectId && !preview.researchId && (await this.database.noteDrafts.get(preview.noteId))?.hasChanges)) throw new RequestFailure('stale', '笔记已改变，请重新核对发送内容。');
@@ -154,13 +158,14 @@ export class AIEngine {
         await checkAuthority();
         timer = setTimeout(() => { timedOut = true; controller.abort(); }, preview.config.timeoutMs);
         phase='transport';const completion: Completion = await this.dependencies.transport.complete(preview.config, credential?.value ?? '', [{ role: 'system', content: preview.systemPrompt }, { role: 'user', content: images.length ? parts : source }], controller.signal);
-        responseReceived=true;receivedUsage=safeTokenUsage(completion);
+        responseReceived=true;receivedUsage=safeTokenUsage(completion);finishReason=completion.finishReason;checks.responseReceived=true;checks.modelOutputComplete=finishReason==='stop'?true:finishReason==='length'?false:null;
         // Record only bounded numeric usage before any report validation. An invalid
         // paid response must not erase usage or release the original reservation.
         await this.database.aiUsage.update(preview.id,{...receivedUsage,responseReceived:true}).catch(()=>{});
         phase='authorization';active(controller.signal); await this.gate();
         await checkAuthority();
-        phase='json';let parsed: unknown; try { parsed = JSON.parse(completion.text); } catch { throw new RequestFailure(preview.researchId?'research_json':'schema', 'AI 内容不是有效 JSON；未保存报告，不自动重试。'); }
+        if(!preview.projectId&&!preview.researchId&&!preview.sources){const currentNote=await this.database.notes.get(preview.noteId);if(!currentNote||currentNote.revision!==preview.revision||(await this.database.noteDrafts.get(preview.noteId))?.hasChanges)throw new RequestFailure('source_snapshot_changed','原笔记或未提交来源快照已变化，未保存本次报告；费用预留保留，不自动重试。');}
+        phase='json';let parsed: unknown;if(!completion.text.trim())throw new RequestFailure('response_empty','模型返回空内容，未保存报告，不自动重试。');try { parsed = JSON.parse(completion.text);checks.jsonParsed=true; } catch { checks.jsonParsed=false;throw preview.researchId?new RequestFailure('research_json','AI 内容不是有效 JSON；未保存报告，不自动重试。'):new ReportValidationError('ai_report_json'); }
         if(preview.researchId && preview.researchSources){
           phase='schema';let report;try{report=validateResearchReport(resolveEvidence(parsed,prepared.evidence??[],preview.researchSources),preview.researchSources,preview.workflowId?2:1);}catch(e){if(e instanceof ResearchReportError)throw e;throw new ResearchReportError('research_validator');}if(credential?.value&&JSON.stringify(report).includes(credential.value))throw new RequestFailure('credential','研究报告包含凭据，已丢弃。');
           phase='format';
@@ -177,26 +182,33 @@ export class AIEngine {
           await this.database.aiUsage.update(preview.id, {status:'succeeded',inputTokens:completion.inputTokens,outputTokens:completion.outputTokens}).catch(()=>{});
           const saved = await this.save(analysis).then(()=>true).catch(()=>false); return {analysis,saved};
         }
-        let report; try { report = validateSkillReport(parsed, preview.template, [preview.title, preview.content, preview.body, preview.url, ...(preview.sources??[]).flatMap(s=>[s.title,s.content,s.body,s.url])].join('\n')); }
-        catch { throw new RequestFailure('schema', '报告未通过 JSON Schema 或来源证据校验；未保存报告，请确认后手动重试。'); }
+        let report;phase='schema';try{
+          if(preview.template.id===BUSINESS_ID)validateReportSchema(parsed);else validateSkillReportSchema(parsed,preview.template);
+          checks.schemaValid=true;phase='evidence';report=validateSkillReport(parsed,preview.template,[preview.title,preview.content,preview.body,preview.url,...(preview.sources??[]).flatMap(s=>[s.title,s.content,s.body,s.url])].join('\n'));checks.evidenceValid=true;
+        }catch(error){if(error instanceof ReportValidationError)throw error;throw new ReportValidationError('ai_report_validator');}
         if (credential?.value && Object.values(report.sections).some(claims => claims.some(claim => claim.text.includes(credential.value) || claim.evidence?.includes(credential.value)))) throw new RequestFailure('credential', '响应包含凭据，已丢弃，未保存或显示。');
-        const createdAt = this.dependencies.now(); const analysis: Analysis = { id: preview.id, noteId: preview.noteId, createdAt, projectId:preview.projectId, ...(preview.projectId?{sources:preview.sources}:{}), sourceUrl: preview.url, template: preview.template, ...(preview.template.id === BUSINESS_ID ? { content: markdown(validateReport(report), preview.config.model, createdAt), report: validateReport(report) } : { content: skillMarkdown(report, preview.template, preview.config.model, createdAt), skillReport: report }), model: preview.config.model, provider: preview.config.provider, endpointOrigin: new URL(preview.config.endpoint).origin, inputDigest: preview.inputDigest, inputRevision: preview.revision, imageCount: preview.imageIds.length };
+        phase='format';const createdAt=this.dependencies.now();let analysis:Analysis;try{analysis={id:preview.id,noteId:preview.noteId,createdAt,projectId:preview.projectId,...(preview.projectId?{sources:preview.sources}:{}),sourceUrl:preview.url,template:preview.template,...(preview.template.id===BUSINESS_ID?{content:markdown(validateReport(report),preview.config.model,createdAt),report:validateReport(report)}:{content:skillMarkdown(report,preview.template,preview.config.model,createdAt),skillReport:report}),model:preview.config.model,provider:preview.config.provider,endpointOrigin:new URL(preview.config.endpoint).origin,inputDigest:preview.inputDigest,inputRevision:preview.revision,imageCount:preview.imageIds.length};checks.inMemoryReport=true;}catch{throw new ReportValidationError('ai_report_format');}
         // A usage-log write failure must not discard a paid-for report. Its reservation remains.
         await this.database.aiUsage.update(preview.id, { status: 'succeeded', inputTokens: completion.inputTokens, outputTokens: completion.outputTokens }).catch(() => {});
-        const saved = await this.save(analysis).then(() => true).catch(() => false); return { analysis, saved };
+        phase='storage';const saved=await this.save(analysis).then(()=>true).catch(()=>false);checks.reportSaved=saved;
+        if(!saved){await this.database.aiUsage.update(preview.id,{reportSaved:false,errorStage:'storage',errorCode:'ai_report_save'}).catch(()=>{});return {analysis,saved,diagnostic:await recordDiagnostic({code:'ai_report_save'})};}return {analysis,saved};
       }, controller.signal);
     } catch (error) {
-      if(error instanceof RequestFailure){receivedUsage={...receivedUsage,...safeTokenUsage(error.diagnostic?.usage)};responseReceived=responseReceived||error.diagnostic?.responseReceived===true;}
+      if(error instanceof RequestFailure){receivedUsage={...receivedUsage,...safeTokenUsage(error.diagnostic?.usage)};responseReceived=responseReceived||error.diagnostic?.responseReceived===true;finishReason=error.diagnostic?.finishReason??finishReason;if(error.diagnostic?.responseReceived!==undefined)checks.responseReceived=error.diagnostic.responseReceived;}
+      if(finishReason)checks.modelOutputComplete=finishReason==='stop'?true:finishReason==='length'?false:null;
       const local=localFailure(phase);
-      const code = timedOut ? 'timeout' : controller.signal.aborted ? 'cancelled' : error instanceof RequestFailure||error instanceof ResearchReportError ? error.code : local.code;
+      const code = timedOut ? 'timeout' : controller.signal.aborted ? 'cancelled' : error instanceof RequestFailure||error instanceof ResearchReportError||error instanceof ReportValidationError ? error.code : local.code;
+      const errorStage=error instanceof ResearchReportError||error instanceof ReportValidationError?error.stage:phase;if(errorStage==='schema')checks.schemaValid=false;if(errorStage==='evidence')checks.evidenceValid=false;if(errorStage==='json')checks.jsonParsed=false;if(code==='response_read'||code==='response')checks.responseReceived=false;
       const existing: AIUsage | undefined | null = await this.database.aiUsage.get(preview.id).catch(() => undefined) ?? (reserved ? usage : null);
-      const failure: AIUsage = { id: preview.id, noteId: preview.noteId, day: existing?.day ?? new Date(this.dependencies.now()).toISOString().slice(0, 10), createdAt: existing?.createdAt ?? this.dependencies.now(), model: preview.config.model, status: code === 'cancelled' ? 'cancelled' : 'failed', reservedMicros: existing?.reservedMicros ?? 0, estimatedInput: preview.inputTokensUpper, maxOutput: preview.config.maxOutput, ...receivedUsage,responseReceived,errorStage:error instanceof ResearchReportError?error.stage:phase,errorCode: code };
+      const failure: AIUsage = { id: preview.id, noteId: preview.noteId, day: existing?.day ?? new Date(this.dependencies.now()).toISOString().slice(0, 10), createdAt: existing?.createdAt ?? this.dependencies.now(), model: preview.config.model, status: code === 'cancelled' ? 'cancelled' : 'failed', reservedMicros: existing?.reservedMicros ?? 0, estimatedInput: preview.inputTokensUpper, maxOutput: preview.config.maxOutput, ...receivedUsage,responseReceived,errorStage,errorCode: code };
       await this.database.aiUsage.put({ ...existing, ...failure }).catch(() => {});
-      if (timedOut) throw new RequestFailure('timeout', 'AI 请求超时，客户端已取消；服务端可能仍产生费用，请确认后手动重试。');
-      if (controller.signal.aborted) throw new RequestFailure('cancelled', 'AI 已关闭或请求已取消，等待任务已停止；已发送请求仍可能计费。');
-      if (error instanceof RequestFailure) throw error;
-      if(error instanceof ResearchReportError)throw new RequestFailure(error.code,error.message);
-      throw local;
+      const diagnostic=await recordDiagnostic(error instanceof ReportValidationError?error:{code});
+      if (timedOut) throw new RequestFailure('timeout', 'AI 请求超时，客户端已取消；服务端可能仍产生费用，请确认后手动重试。',{report:diagnostic});
+      if (controller.signal.aborted) throw new RequestFailure('cancelled', 'AI 已关闭或请求已取消，等待任务已停止；已发送请求仍可能计费。',{report:diagnostic});
+      if(error instanceof ReportValidationError)throw new RequestFailure(error.code,error.message,{report:diagnostic});
+      if (error instanceof RequestFailure) throw new RequestFailure(error.code,error.message,{...error.diagnostic,report:diagnostic});
+      if(error instanceof ResearchReportError)throw new RequestFailure(error.code,error.message,{report:diagnostic});
+      throw new RequestFailure(local.code,local.message,{report:diagnostic});
     } finally { if (timer) clearTimeout(timer); this.pending.delete(previewId); }
   }
   async save(analysis: Analysis) {
@@ -212,5 +224,6 @@ export class AIEngine {
       if (previous) { if (JSON.stringify(previous) !== JSON.stringify(analysis)) throw new Error('报告 ID 冲突。'); return; }
       await this.database.analyses.add(analysis);
     });
+    await this.database.aiUsage.update(analysis.id,{reportSaved:true}).catch(()=>{});await markDiagnosticSaved(analysis.id,this.database).catch(()=>{});
   }
 }

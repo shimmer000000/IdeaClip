@@ -1,16 +1,20 @@
 import validate from './generated/validate.js';
 import schema from './generated/schema.json' with { type: 'json' };
+import {ReportValidationError,schemaFailure} from './report-errors';
 export const SECTIONS = {
   summary: '核心创意总结', targetUsers: '目标用户画像', painPoints: '用户痛点', positioning: '产品和服务定位', businessModel: '商业模式', revenue: '潜在盈利方式', acquisition: '获客渠道', advantages: '竞争优势和进入门槛', costs: '开发与运营成本假设', replicability: '可复制性分析', risks: '主要风险', sevenDayPlan: '7 天验证计划', thirtyDayPlan: '30 天执行计划', ninetyDayPlan: '90 天发展计划', questions: '值得进一步调查的问题',
 } as const;
 export interface Claim { kind: 'fact' | 'inference' | 'hypothesis'; text: string; evidence: string | null }
 export interface Report { schemaVersion: 1; sections: Record<keyof typeof SECTIONS, Claim[]> }
 export const LABELS = { fact: '来源陈述（未独立核验）', inference: '推测', hypothesis: '待验证假设' };
+export function validateReportSchema(value:unknown){if(!validate(value))throw schemaFailure(validate.errors?.[0],value);return value as Report;}
 export function validateReport(value: unknown, source?: string): Report {
-  if (!validate(value)) throw new Error('AI 返回的 JSON 未通过报告 Schema 校验；未保存报告，请核对模型兼容性后手动重试。');
+  validateReportSchema(value);
   const report = value as Report;
   for (const claims of Object.values(report.sections)) for (const claim of claims) {
-    if (!claim.text.trim() || (claim.kind === 'fact' && (!claim.evidence?.trim() || (source !== undefined && !source.includes(claim.evidence))))) throw new Error('来源陈述缺少可对应的原文证据；未保存报告。');
+    if(!claim.text.trim())throw new ReportValidationError('ai_report_text');
+    if(claim.kind==='fact'&&!claim.evidence?.trim())throw new ReportValidationError('ai_report_evidence_required');
+    if(claim.kind==='fact'&&source!==undefined&&!source.includes(claim.evidence!))throw new ReportValidationError('ai_report_quote_mismatch');
   }
   return report;
 }

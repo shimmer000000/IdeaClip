@@ -161,7 +161,7 @@ export function references(table: BackupTable, row: Row): [BackupTable, string][
 }
 export function parseManifest(value: unknown): Manifest {
   const r = object(value);
-  if (r.format !== 'IdeaClip' || ![1, 2, 3, 4, 5, 6].includes(r.formatVersion as number) || typeof r.databaseVersion !== 'number' || !Number.isInteger(r.databaseVersion) || r.databaseVersion < 1 || r.databaseVersion > 14) throw new Error('备份格式或数据库版本不兼容，请使用支持该版本的 IdeaClip。');
+  if (r.format !== 'IdeaClip' || ![1, 2, 3, 4, 5, 6].includes(r.formatVersion as number) || typeof r.databaseVersion !== 'number' || !Number.isInteger(r.databaseVersion) || r.databaseVersion < 1 || r.databaseVersion > 15) throw new Error('备份格式或数据库版本不兼容，请使用支持该版本的 IdeaClip。');
   const createdAt = text(r.createdAt, 100); if (!Number.isFinite(Date.parse(createdAt))) throw new Error('备份创建时间无效。');
   const counts = emptyCounts(); const source = object(r.counts); let total = 0;
   for (const table of TABLES) { counts[table] = table==='researchWorkflows'&&Number(r.formatVersion)<=5&&r.databaseVersion<=13&&source[table]===undefined?0:['researchSources','researchRuns','researchReports'].includes(table) && Number(r.formatVersion)<=4 && r.databaseVersion<=12 && source[table]===undefined ? 0 : table === 'researchPlans' && Number(r.formatVersion) <= 3 && r.databaseVersion <= 11 && source[table] === undefined ? 0 : table === 'comparisonReports' && Number(r.formatVersion) <= 2 && r.databaseVersion <= 9 && source[table] === undefined ? 0 : table === 'aiTemplates' && r.formatVersion === 1 && r.databaseVersion <= 8 && source[table] === undefined ? 0 : number(source[table]); total += counts[table]; }

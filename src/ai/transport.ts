@@ -1,9 +1,11 @@
 import type { AIConfig } from './config';
-export interface Completion { text: string; inputTokens?: number; outputTokens?: number }
+import type {AIDiagnostic} from './diagnostics';
+export type FinishReason='stop'|'length'|'content_filter'|'tool_calls'|'function_call';
+export interface Completion { text: string; inputTokens?: number; outputTokens?: number;finishReason?:FinishReason }
 export type TokenUsage=Pick<Completion,'inputTokens'|'outputTokens'>;
 export function safeTokenUsage(value:TokenUsage|undefined):TokenUsage {const token=(v:unknown)=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0&&v<100000000?v:undefined;const inputTokens=token(value?.inputTokens),outputTokens=token(value?.outputTokens);return {...(inputTokens===undefined?{}:{inputTokens}),...(outputTokens===undefined?{}:{outputTokens})};}
 export interface AITransport { complete(config: AIConfig, key: string, messages: unknown[], signal: AbortSignal): Promise<Completion> }
-export class RequestFailure extends Error { constructor(readonly code: string, message: string,readonly diagnostic?:{usage?:TokenUsage;responseReceived?:boolean}) { super(message); } }
+export class RequestFailure extends Error { constructor(readonly code: string, message: string,readonly diagnostic?:{usage?:TokenUsage;responseReceived?:boolean;finishReason?:FinishReason;report?:AIDiagnostic}) { super(message); } }
 export function chatTransport(fetcher: typeof fetch = fetch): AITransport {
   return { async complete(config, key, messages, signal) {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }; if (config.auth === 'bearer') headers.Authorization = `Bearer ${key}`;
@@ -21,11 +23,14 @@ export function chatTransport(fetcher: typeof fetch = fetch): AITransport {
     let raw:string;try{raw=new TextDecoder('utf-8', { fatal: true }).decode(bytes);}catch{throw new RequestFailure('response_encoding','服务商响应不是有效 UTF-8，未处理报告。',{responseReceived:true});}
     if (key && raw.includes(key)) throw new RequestFailure('credential', '响应包含凭据，已丢弃，未保存或显示。');
     let data; try { data = JSON.parse(raw); } catch { throw new RequestFailure('response_json', '服务商外层响应不是有效 JSON，未处理报告。',{responseReceived:true}); }
-    const usage=safeTokenUsage({inputTokens:data?.usage?.prompt_tokens,outputTokens:data?.usage?.completion_tokens});const diagnostic={usage,responseReceived:true};
+    const usage=safeTokenUsage({inputTokens:data?.usage?.prompt_tokens,outputTokens:data?.usage?.completion_tokens});
     const choice = data?.choices?.[0];
+    const finishReason:FinishReason|undefined=['stop','length','content_filter','tool_calls','function_call'].includes(choice?.finish_reason)?choice.finish_reason:undefined;
+    const diagnostic={usage,responseReceived:true,finishReason};
     if (key && typeof choice?.message?.content === 'string' && choice.message.content.includes(key)) throw new RequestFailure('credential', '响应包含凭据，已丢弃，未保存或显示。');
     if(choice?.finish_reason==='length')throw new RequestFailure('response_truncated','模型输出达到上限而被截断；未生成有效报告，不自动重试。',diagnostic);
     if (choice?.finish_reason !== 'stop' || choice?.message?.refusal || choice?.message?.tool_calls || typeof choice?.message?.content !== 'string') throw new RequestFailure('response_content', '模型拒绝或返回不支持的内容/工具调用；未生成有效报告。',diagnostic);
-    return { text: choice.message.content,...usage };
+    if(!choice.message.content.trim())throw new RequestFailure('response_empty','模型返回空内容；未生成有效报告，不自动重试。',diagnostic);
+    return { text: choice.message.content,...usage,finishReason };
   } };
 }

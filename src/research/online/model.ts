@@ -66,7 +66,9 @@ export function validateResearchReport(value:unknown,sources:ResearchSource[],ex
    const text=textValue(c.text,3000);if(!text.trim())throw new ResearchReportError('research_text');
    if(c.sourceId!==null&&(typeof c.sourceId!=='string'||!c.sourceId.trim()||c.sourceId.length>500||/[\u0000-\u001f]/.test(c.sourceId)))throw new ResearchReportError('research_source');
    const sourceId=c.sourceId as string|null,quote=c.quote===null?null:textValue(c.quote,1000);const source=sources.find(s=>s.id===sourceId);
-   if(sourceId===null?(quote!==null||c.kind==='original'||c.kind==='claim'):!source||!['snippet','readable','partial'].includes(source.status))throw new ResearchReportError('research_source');
+   if(sourceId===null&&(quote!==null||c.kind==='original'||c.kind==='claim'))throw new ResearchReportError('research_source_required');
+   if(sourceId!==null&&!source)throw new ResearchReportError('research_source_missing');
+   if(source&&!['snippet','readable','partial'].includes(source.status))throw new ResearchReportError('research_source_unreadable');
    if(sourceId!==null&&!quote?.trim())throw new ResearchReportError('research_quote_required');
    if(source&&quote!==null&&!source.content.includes(quote))throw new ResearchReportError('research_quote_mismatch');
    if(c.kind==='original'&&text!==quote)throw new ResearchReportError('research_original_mismatch');

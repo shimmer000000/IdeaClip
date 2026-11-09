@@ -8,6 +8,7 @@ import { deleteNoteIndex, migrateLibrary, writeNoteIndex, type NoteCard, type No
 import type { AIConfig } from './ai/config';
 import type { Report } from './ai/report';
 import type { AIUsage } from './ai/engine';
+import type {AIDiagnostic} from './ai/diagnostics';
 import { announceAIChange } from './ai/events';
 import { enqueueSavedNote, pauseAutomatic } from './automation/policy';
 import { wakeQueue } from './automation/signals';
@@ -62,6 +63,7 @@ export class IdeaClipDB extends Dexie {
   screenshotThumbs!: Table<ScreenshotThumb, string>;
   aiConfig!: Table<AIConfig, string>;
   aiUsage!: Table<AIUsage, string>;
+  aiDiagnostics!:Table<AIDiagnostic,string>;
   autoPolicy!: Table<AutoPolicy, string>;
   aiTasks!: Table<AITask, string>;
   comparisonReports!: Table<Analysis, string>;
@@ -98,6 +100,7 @@ export class IdeaClipDB extends Dexie {
     this.version(12).stores({ researchPlans: 'id, updatedAt, createdAt' });
     this.version(13).stores({ researchConfig:'id',researchUsage:'id, day, runId',researchRuns:'id, studyId, state, createdAt, [studyId+createdAt]',researchSources:'id, studyId, runId, collectedAt, [studyId+collectedAt]',researchReports:'id, studyId, createdAt, [studyId+createdAt]' });
     this.version(14).stores({researchWorkflows:'id, studyId, updatedAt'});
+    this.version(15).stores({aiDiagnostics:'id, createdAt, noteId, attemptId'});
   }
 }
 export const db = new IdeaClipDB();

@@ -6,11 +6,13 @@
 
 ## 当前范围
 
+**当前应用版本 0.2.4：单篇笔记 AI 失败诊断。** 在“AI 商业模式分析”页面查看本机诊断历史、复制脱敏摘要、导出 JSON 或复制给 Codex 的排查指令。诊断区分响应读取、JSON、实际 Schema 字段/规则、逐字证据、来源快照变化与本地保存；已取得的实际 usage 和 finish_reason 独立显示，未知保持未知。有效报告保存失败可只重试本地保存；查看诊断不会重新调用模型。全机最多20条诊断，删除不动费用账本或分析报告。旧通用错误无法恢复未记录的字段详情。见[使用说明](docs/AI-DIAGNOSTICS.md)和[专项验收](docs/AI-DIAGNOSTICS-VALIDATION.md)。
+
 **0.2.3：受信任 Windows 本地 Codex 单任务与结果回收。** 用户已取消额外 OS 隔离方案；新一次性 `handoff:task` CLI 复用 Git/范围预检，独立短期授权后使用普通 `workspace-write/on-request` 参数，失败不自动重试或回滚；Git 后检通过才输出关联交付v2，仍须人工导入与验收。本轮只验证 Mock 和固定 Node 合成进程，未调用真实 Codex 模型。预检与后检不提供 OS 级隔离。见[操作说明](docs/CODEX-LOCAL-TASK.md)和[验收记录](docs/CODEX-LOCAL-TASK-VALIDATION.md)。以下版本记录保留当时范围。
 
 最新真实验收（2026-11-08）：用户Chrome截图显示DeepSeek商业机会报告已保存并进入第7步，历史中有deepseek-flash报告及中文内容、来源和证据。报告重开、实际Markdown下载及本次账单仍待核对，不重复调用。详见[真实截图补充](docs/RELEASE-0.1.1.md#用户真实截图补充2026-11-08)；下文先前“待真实成功”的描述保留为历史记录。
 
-当前应用版本 **0.2.2**：新增[受控执行器与隔离测试](docs/CONTROLLED-EXECUTOR.md)。仅工厂新建临时Git样本运行固定WASM能力程序；复用单次本地Mock授权、Git/包/范围快照，能力拒绝发生在执行期间。真实Codex的OS文件/网络隔离尚未核实，入口固定阻塞；浏览器无系统命令桥接，无新依赖/权限/数据库迁移，不改变人工验收或费用历史。实测见[0.2.2验收](docs/CONTROLLED-EXECUTOR-VALIDATION.md)。
+历史版本 **0.2.2**：新增[受控执行器与隔离测试](docs/CONTROLLED-EXECUTOR.md)。仅工厂新建临时Git样本运行固定WASM能力程序；复用单次本地Mock授权、Git/包/范围快照，能力拒绝发生在执行期间。真实Codex的OS文件/网络隔离尚未核实，入口固定阻塞；浏览器无系统命令桥接，无新依赖/权限/数据库迁移，不改变人工验收或费用历史。实测见[0.2.2验收](docs/CONTROLLED-EXECUTOR-VALIDATION.md)。
 
 0.2.2验收：823项单元通过、1项固定端口测试跳过，60项相关Chrome回归通过，固定子进程最终专项57项及Chrome发布复测7项通过。Windows-MCP原Chrome实际0.2.2、旧交接/交付保留、真实执行阻塞及未授权拒绝通过。**真实Codex的OS隔离未通过，未执行真实任务或付费模型。**
 
