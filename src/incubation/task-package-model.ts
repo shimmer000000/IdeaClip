@@ -1,4 +1,4 @@
-import {UUID,shape,digest,evidencePath,parseEvidence} from './local-evidence-model';
+import {UUID,shape,digest,evidencePath,evidenceRepository,parseEvidence} from './local-evidence-model';
 import deliverySchema from '../../docs/CODEX-DELIVERY.schema.json';
 export const PACKAGE_BYTES=128*1024;
 export const DELIVERY_CONTRACT={format:'IdeaClipCodexDelivery',schemaVersion:2,association:'taskPackage.packageId + taskPackage.contentSha256',schemaFile:'docs/CODEX-DELIVERY.schema.json',schema:deliverySchema.oneOf[1]} as const;
@@ -8,7 +8,7 @@ export interface TaskPackage {
  task:{projectId:string;taskId:string;type:'development';projectPurpose:'development';goal:string;notes:string;repository:string;workingDirectory:string;allowedPaths:string[];acceptance:string;instructions:string};
  delivery:typeof DELIVERY_CONTRACT;
 }
-export interface PackageHistory {packageId:string;contentSha256:string;bindingHash:string;generatedAt:string;exportedAt:number;handedOffAt:number|null;historical:boolean}
+export interface PackageHistory {packageId:string;contentSha256:string;bindingHash:string;generatedAt:string;exportedAt:number;handedOffAt:number|null;historical:boolean;repository?:string}
 export function canonical(value:unknown):string {if(value===null||typeof value!=='object')return JSON.stringify(value);if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+canonical((value as Record<string,unknown>)[k])).join(',')+'}';}
 export function packageUuid(v:unknown){if(typeof v!=='string'||!UUID.test(v))throw Error('任务包ID无效。');return v.toLowerCase();}
 export function packageHash(v:unknown){if(typeof v!=='string'||!(/^[a-f0-9]{64}$/).test(v))throw Error('任务包哈希无效。');return v;}
@@ -28,6 +28,6 @@ export async function decodeTaskPackage(text:string):Promise<TaskPackage>{
 export function packageHistories(value:unknown,historical=false):PackageHistory[]{
  if(!Array.isArray(value)||value.length>10)throw Error('任务包历史超过10版或格式无效。');
  const n=(v:unknown)=>{if(typeof v!=='number'||!Number.isSafeInteger(v)||v<0||!Number.isFinite(new Date(v).getTime()))throw Error('任务包记录时间无效。');return v;};
- const rows=value.map(v=>{const h=v as PackageHistory;if(!h||typeof h.historical!=='boolean')throw Error('任务包历史无效。');const generatedAt=packageTime(h.generatedAt),exportedAt=n(h.exportedAt),handedOffAt=h.handedOffAt===null?null:n(h.handedOffAt);if(Date.parse(generatedAt)>exportedAt||handedOffAt!==null&&handedOffAt<exportedAt)throw Error('任务包历史时间顺序无效。');return {packageId:packageUuid(h.packageId),contentSha256:packageHash(h.contentSha256),bindingHash:packageHash(h.bindingHash),generatedAt,exportedAt,handedOffAt,historical:historical||h.historical};});
+ const rows=value.map(v=>{const h=v as PackageHistory;if(!h||typeof h.historical!=='boolean')throw Error('任务包历史无效。');const generatedAt=packageTime(h.generatedAt),exportedAt=n(h.exportedAt),handedOffAt=h.handedOffAt===null?null:n(h.handedOffAt);if(Date.parse(generatedAt)>exportedAt||handedOffAt!==null&&handedOffAt<exportedAt)throw Error('任务包历史时间顺序无效。');return {packageId:packageUuid(h.packageId),contentSha256:packageHash(h.contentSha256),bindingHash:packageHash(h.bindingHash),generatedAt,exportedAt,handedOffAt,historical:historical||h.historical,...(h.repository!==undefined?{repository:evidenceRepository(h.repository)}:{})};});
  if(new Set(rows.map(h=>h.packageId)).size!==rows.length)throw Error('任务包历史ID重复。');return rows;
 }

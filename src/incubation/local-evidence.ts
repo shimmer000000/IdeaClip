@@ -19,7 +19,7 @@ export async function importCodexReport(projectId:string,taskId:string,text:stri
  return database.transaction('rw',database.projects,async()=>{const p=await database.projects.get(projectId),t=p?.tasks?.find(t=>t.id===taskId);if(!p||!t)throw Error('项目或任务不存在，未导入。');assertReportTarget(report,p,t);if(context&&(currentPackageBinding(p,t)!==context.binding||!t.taskPackages?.some(h=>h.packageId===report.taskPackage!.packageId&&canonical(h)===context.history)))throw Error('报告导入期间任务包或绑定变化，未导入。');const entries=evidenceEntries(t.localDeliveries??[]),old=entries.find(e=>e.report.reportId===report.reportId);
   if(old){if(old.fileDigest!==fileDigest)throw Error('报告ID已存在但内容不同，请生成新的reportId；未覆盖旧证据。');return '同一报告已导入，未重复创建。';}
   if(entries.length>=10)throw Error('当前任务已达10版报告上限，未覆盖旧证据。');
-  entries.push({version:entries.length+1,report,fileDigest,sourceName:safeName,importedAt:Date.now(),historical:false});t.localDeliveries=entries;p.revision=(p.revision??0)+1;await database.projects.put(p);return '交付报告已追加保存；Codex报告，尚未独立核验。';
+  entries.push({version:entries.length+1,report,fileDigest,sourceName:safeName,importedAt:Date.now(),historical:false});t.localDeliveries=entries;p.updatedAt=Date.now();p.revision=(p.revision??0)+1;await database.projects.put(p);return '交付报告已追加保存；Codex报告，尚未独立核验。';
  });
 }
 export async function checkLocalEvidence(projectId:string,taskId:string,reportId:string,text:string,name:string,database:IdeaClipDB=db){

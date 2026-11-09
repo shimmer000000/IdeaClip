@@ -1,5 +1,7 @@
 # IdeaClip 路线图
 
+**0.1.9 Codex本地任务交接中心（2026-11-09）**：集中任务包/交付历史，项目/状态/更新时间筛选，当前绑定失效及仓库快照提示；主动第一层收件箱或手动JSON选择，扫描仅预览，人工确认后复用v2逐项事务关联，重复跳过、错误拒绝、反馈部分结果。证据声明/本地核对/GitHub/CI/人工验收独立，无后台执行或Agent Autoloop。沿用schema14/ZIP6，不迁移或清空用户数据。742项单元（1项固定端口跳过）、57项相关Chrome Mock通过；Windows-MCP原Chrome重载、多选、拒绝/确认导入、重开与旧历史保留通过，目录原生授权仍待实机验收。见[专项验收](CODEX-HANDOFF-CENTER-VALIDATION.md)。
+
 **0.1.8 标准Codex本地交接（2026-11-09）**：任务包v1与报告v2，严格任务类型/审核/仓库/目录/范围绑定、预览确认、内容哈希、历史交接与结果关联；无执行器或Agent Autoloop依赖。复用0.1.7和schema14/ZIP6，可选元数据恢复仅历史。723项单元/55项相关Chrome Mock通过，1项固定端口启停跳过；Windows-MCP原Chrome完成实际下载、错误包拒绝、合成结果关联和重开保留，不自动验收或执行。见[专项验收](CODEX-TASK-PACKAGE-VALIDATION.md)。
 
 **0.1.7 本地交付证据（2026-11-09）**：受限JSON、任务/仓库/范围绑定、版本追加、测试退出码/时间/日志哈希文件核对、GitHub差异与人工验收独立；兼容schema14/ZIP6并强制恢复为历史。无自动执行、新依赖、付费调用。694项单元/53项相关Chrome Mock通过（1项固定端口测试跳过）；原Chrome经Windows-MCP完成实际报告导入/核对/错误拒绝/重开，真实GitHub同Commit与文件核对通过，未发现CI。详见[专项验收](CODEX-LOCAL-EVIDENCE-VALIDATION.md)。
