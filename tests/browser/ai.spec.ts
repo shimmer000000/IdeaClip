@@ -262,7 +262,7 @@ test('长期密钥单独确认风险，重启浏览器保留报告和预算；�
 
 for (const skill of BUILTINS) test(`Skills：${skill.name} 结构、预览与历史`, async ({}, info) => {
   await configure(); await enable(); await page.getByLabel('选择分析模板', { exact: true }).selectOption(skill.id); await preview();
-  const dialog = page.getByRole('dialog', { name: '本次 AI 分析确认' }); await expect(dialog).toContainText(skill.name); await expect(dialog).toContainText('版本 1.0.0');
+  const dialog = page.getByRole('dialog', { name: '本次 AI 分析确认' }); await expect(dialog).toContainText(skill.name); await expect(dialog).toContainText('版本 '+skill.version);
   await dialog.getByText('最终请求文本（系统约束与模板偏好）', { exact: true }).click(); await expect(dialog).toContainText('untrustedTemplatePreferences'); expect(calls).toHaveLength(0);
   await confirm(); await expect(page.locator('.ai-report section')).toHaveCount(skill.sections.length); await expect(page.locator('.ai-report')).toContainText(skill.sections[0].label); await expect(page.getByRole('link', { name: '查看本次分析原网页 ↗', exact: true })).toHaveAttribute('href', /^https?:/);
   expect(calls).toHaveLength(1); const request = calls[0].body as { messages: { role: string; content: string }[]; tools?: unknown }; expect(request.messages[0].role).toBe('system'); expect(request.messages[1].role).toBe('user'); expect(request.tools).toBeUndefined();

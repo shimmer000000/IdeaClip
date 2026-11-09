@@ -24,7 +24,7 @@ import {makeDiagnostic,saveDiagnostic,markDiagnosticSaved,unknownChecks,type AID
 
 export type AIStage='authorization'|'reservation'|'transport'|'json'|'schema'|'evidence'|'validator'|'format'|'storage';
 export interface AIUsage { id: string; noteId: string; day: string; createdAt: number; model: string; status: 'reserved' | 'succeeded' | 'failed' | 'cancelled'; reservedMicros: number; estimatedInput: number; maxOutput: number; inputTokens?: number; outputTokens?: number; errorCode?: string; errorStage?:AIStage; responseReceived?:boolean; reportSaved?:boolean }
-export interface Preview { workflowId?:string; researchId?:string; researchSources?:ResearchSource[]; projectId?: string; sources?: Source[]; id: string; noteId: string; createdAt: number; config: AIConfig; title: string; content: string; body: string; url: string; imageIds: string[]; inputTokensUpper: number; costMicros: number; inputDigest: string; revision: number; template: Skill; systemPrompt: string; requestText: string }
+export interface Preview { configuredMaxOutput?:number; workflowId?:string; researchId?:string; researchSources?:ResearchSource[]; projectId?: string; sources?: Source[]; id: string; noteId: string; createdAt: number; config: AIConfig; title: string; content: string; body: string; url: string; imageIds: string[]; inputTokensUpper: number; costMicros: number; inputDigest: string; revision: number; template: Skill; systemPrompt: string; requestText: string }
 interface Prepared { evidence?:EvidenceRef[]; workflowHash?:string; researchHash?:string; rawResearch?:ResearchSource[]; preview: Preview; images: Blob[]; source: string; credentialVersion: string | null; templateSignature: string; rawSources?: Source[]; projectHash?: string }
 export interface AnalysisResult { analysis: Analysis; saved: boolean;diagnostic?:AIDiagnostic }
 interface Dependencies { transport: AITransport; credential: typeof getCredential; permission: typeof hasPermission; lock: <T>(action: () => Promise<T>, signal: AbortSignal) => Promise<T>; now: () => number }
@@ -49,6 +49,7 @@ export class AIEngine {
     const template = projectId ? PLAN_SKILL : comparisonIds ? BUILTINS[0] : await getSkill(templateId ?? (await preferences(this.database)).defaultId, this.database);
     const config = validateConfig((await this.database.aiConfig.get('manual')) ?? (() => { throw new RequestFailure('config', '请先在设置页配置并授权 AI 服务商。'); })());
     if (!(await this.dependencies.permission(config.endpoint))) throw new RequestFailure('permission', '尚未授权此服务商域名，请到设置页明确授权。');
+    const configuredMaxOutput=config.maxOutput;
     config.maxOutput = comparisonIds && !projectId ? config.maxOutput : Math.min(config.maxOutput, template.maxOutput);
     const credential = await this.dependencies.credential(config.endpoint);
     if (config.auth === 'bearer' && !credential?.value) throw new RequestFailure('credential', '此端点没有可用 API Key，请到设置页填写。');
@@ -68,7 +69,7 @@ export class AIEngine {
     if (sourceUrl) { sourceUrl.username = ''; sourceUrl.password = ''; for (const key of [...sourceUrl.searchParams.keys()]) if (/token|key|secret|password|credential|signature/i.test(key)) sourceUrl.searchParams.delete(key); }
     const input = { title: clean(note.title), content: clean(note.content), body: clean(note.body), url: clean(sourceUrl?.href ?? '') };
     const safeTemplate = JSON.parse(JSON.stringify(template), (_key, value) => typeof value === 'string' ? clean(value) : value) as Skill;
-    let systemPrompt = skillSystem(safeTemplate);
+    let systemPrompt = skillSystem(safeTemplate,config.maxOutput);
     let source = JSON.stringify({ untrustedTemplatePreferences: { instructions: renderInstructions(safeTemplate, input), sections: safeTemplate.sections, scenario: safeTemplate.scenario, inputRequirements: safeTemplate.inputRequirements }, untrustedSource: input }); let rawSources: Source[] | undefined; let sources: Source[] | undefined;
     if (comparisonIds) {
       const ids = projectId ? [...new Set(comparisonIds)] : selectedIds(comparisonIds); if(ids.length>10)throw new Error('最多选择10条来源。'); if (imageIds.length) throw new Error('对比不发送截图。');
@@ -87,7 +88,7 @@ export class AIEngine {
     const inputTokensUpper = new TextEncoder().encode(systemPrompt + source).length + 4096 + imageIds.length * config.imageTokenAllowance;
     const costMicros = Math.max(1, Math.ceil(inputTokensUpper * config.inputUsdPerMillion + config.maxOutput * config.outputUsdPerMillion));
     const id = crypto.randomUUID(); const inputDigest = await digest(new Blob([source, ...snapshot.images]));
-    const preview: Preview = { id, noteId, createdAt: this.dependencies.now(), config, ...input, imageIds: [...imageIds], inputTokensUpper, costMicros, inputDigest, revision: note.revision, projectId, sources, template: safeTemplate, systemPrompt, requestText: source };
+    const preview: Preview = { configuredMaxOutput,id, noteId, createdAt: this.dependencies.now(), config, ...input, imageIds: [...imageIds], inputTokensUpper, costMicros, inputDigest, revision: note.revision, projectId, sources, template: safeTemplate, systemPrompt, requestText: source };
     this.previews.set(id, { preview: structuredClone(preview), images: snapshot.images, source, credentialVersion: credential?.version ?? null, templateSignature: skillSignature(template), rawSources, projectHash });
     // Return a detached value: callers cannot change the internally confirmed payload.
     return structuredClone(preview);
@@ -158,6 +159,8 @@ export class AIEngine {
         await checkAuthority();
         timer = setTimeout(() => { timedOut = true; controller.abort(); }, preview.config.timeoutMs);
         phase='transport';const completion: Completion = await this.dependencies.transport.complete(preview.config, credential?.value ?? '', [{ role: 'system', content: preview.systemPrompt }, { role: 'user', content: images.length ? parts : source }], controller.signal);
+        // Request timeout ends when the complete response is received, not after local IDB work.
+        if(timer){clearTimeout(timer);timer=undefined;}
         responseReceived=true;receivedUsage=safeTokenUsage(completion);finishReason=completion.finishReason;checks.responseReceived=true;checks.modelOutputComplete=finishReason==='stop'?true:finishReason==='length'?false:null;
         // Record only bounded numeric usage before any report validation. An invalid
         // paid response must not erase usage or release the original reservation.
@@ -224,6 +227,7 @@ export class AIEngine {
       if (previous) { if (JSON.stringify(previous) !== JSON.stringify(analysis)) throw new Error('报告 ID 冲突。'); return; }
       await this.database.analyses.add(analysis);
     });
-    await this.database.aiUsage.update(analysis.id,{reportSaved:true}).catch(()=>{});await markDiagnosticSaved(analysis.id,this.database).catch(()=>{});
+    const recorded=await this.database.aiUsage.get(analysis.id).catch(()=>undefined);
+    await this.database.aiUsage.update(analysis.id,{reportSaved:true,...(recorded?.errorCode==='ai_report_save'?{errorCode:undefined,errorStage:undefined}:{})}).catch(()=>{});await markDiagnosticSaved(analysis.id,this.database).catch(()=>{});
   }
 }

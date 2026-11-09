@@ -6,11 +6,18 @@ import { signalQueue } from '../automation/signals';
 
 export interface SkillPreferences { id: 'general'; defaultId: string; version: string }
 export interface SkillBinding { skillId: string; skillVersion: string; skillSignature: string; skillPreferenceVersion: string }
-export async function listSkills(database = db) { const rows = await database.aiTemplates.toArray(); return [...BUILTINS.filter(b => !rows.some(r => r.id === b.id)), ...rows].map(validateSkill); }
+function currentBuiltin(value:unknown):Skill {
+  const skill=validateSkill(value),current=BUILTINS.find(b=>b.id===BUSINESS_ID)!;
+  // Upgrade only the exact former application definition; preserve local enabled state.
+  // Old snapshots/bindings remain untouched and no longer match the new signature.
+  if(skill.id===BUSINESS_ID&&skill.version==='1.0.0'&&JSON.stringify({...skill,enabled:true,updatedAt:0})===JSON.stringify({...current,version:'1.0.0'}))return {...current,enabled:skill.enabled,updatedAt:skill.updatedAt};
+  return skill;
+}
+export async function listSkills(database = db) { const rows = await database.aiTemplates.toArray(); return [...BUILTINS.filter(b => !rows.some(r => r.id === b.id)), ...rows].map(currentBuiltin); }
 export async function getSkill(id: string, database = db): Promise<Skill> {
   const value = await database.aiTemplates.get(id) ?? BUILTINS.find(b => b.id === id);
   if (!value) throw new Error('分析模板不存在，请重新选择。');
-  const skill = validateSkill(value); if (!skill.enabled) throw new Error('分析模板已停用，请重新选择。');
+  const skill = currentBuiltin(value); if (!skill.enabled) throw new Error('分析模板已停用，请重新选择。');
   if (skill.builtin) { const builtin = BUILTINS.find(b => b.id === id); if (!builtin || JSON.stringify({ ...skill, enabled: true, updatedAt: 0 }) !== JSON.stringify(builtin)) throw new Error('内置模板内容无效。'); }
   return skill;
 }
