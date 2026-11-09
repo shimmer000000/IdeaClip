@@ -1,5 +1,18 @@
 # IdeaClip 开发约定
 
+<!-- AUTOMATION_TOOLS_START -->
+## Playwright 与 Windows-MCP 分工
+
+- 先发现当前会话工具，再检查本仓库已有 `@playwright/test`、浏览器和脚本；配置存在、工具已加载、实际调用通过要分别记录。优先运行现有 `npm run test:e2e -- <本仓库测试文件>`，不重复安装Playwright或为调用方式额外增加Playwright MCP。本会话无Playwright MCP时，可由Codex开发终端直接调用现有Playwright运行器，不冒充MCP调用。
+- Playwright负责隔离浏览器的导航、语义定位、表单、扩展回归、`setInputFiles`、下载文件/JSON/哈希核对、网络拦截、截图和Trace。复用`tests/browser/collection-harness.ts`的新临时配置及本机Chrome；不得将原用户Default配置交给该调试框架或在原Chrome开启远程调试。Mock必须拦截非预期网络并断言零外发，不能把合成数据或隔离结果记为真实用户/真实API通过。
+- Windows-MCP负责原用户Chrome的扩展管理、明确授权范围内的原生权限窗口、系统文件选择器，以及Playwright不能可靠处理的Windows界面。先核对ControlStatus和唯一目标窗口，按当前UI Automation/局部截图定位；每步操作后核对结果，不读取后台敏感内容。USER_CONTROL、焦点冲突、锁屏/UAC或新敏感授权时停止输入并重新核对，禁止抢占或绕过保护。
+- 同一窗口同时只能有一个输入控制者。开始前记录工具、窗口/配置和目的；Playwright结束并关闭其自有隔离context后，重新读取Windows状态再交给Windows-MCP。不要让两个工具同时向同一窗口输入，不用原Chrome补做已通过且无必要的Mock测试；只关闭本轮创建的临时窗口/标签页。
+- Trace由现有Playwright Test运行器管理；需要成功用例留证时使用`--trace=on`，不要再对同一context调用`tracing.start/stop`造成重复管理。结果放指定`--output=test-results/<本轮目录>`，下载用`info.outputPath`保存，原生局部截图仅放`test-results-native/<本轮目录>`；均受忽略规则保护，不提交Trace、截图、浏览器配置、下载任务包或用户数据。
+- 本次整合验收的固定最小回归：`npm run typecheck`，以及`npm run test:e2e -- tests/browser/task-package.spec.ts --trace=on --output=test-results/automation-tools-0.1.8-final`。不操作Agent Autoloop、SSH、8788/23334或真实费用账本，不调用付费API。文档/测试留证改动不改变应用安装包版本；业务/安装包更新仍遵守下文版本递增规则。
+
+完整实测范围见`docs/AUTOMATION-TOOLS-VALIDATION.md`。
+<!-- AUTOMATION_TOOLS_END -->
+
 - 只修改本仓库，不修改其他 GitHub 项目。
 - 自有SSH出口只在明确授权的服务器专用目录/账户部署，不改网站、数据库、sshd全局配置或系统网络；旧系统不升级/重装。Windows继续运行Node24，SSH固定主机指纹/专用密钥/无口令回退，远端forced-command仅准许公共域名DNS及公共字面IP:443，不提供Shell/SFTP/原生转发。配置和SSH私钥仅本机private/，不得进入Git或ZIP。
 - 解析器与地址族是显式出站选项，默认系统DNS/首地址；选择ssh-gateway或ipv4须重新确认，不能失败后自动切换。SSH DNS的全部回答在远端和本机均公共IP检查，然后只连接一个数字IP；无新DNS/换IP/SNI改写，仍按原始域名验证TLS。测试只Mock；真实免费握手与付费授权分开记证。
