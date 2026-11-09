@@ -146,3 +146,7 @@ App实际启动Chrome，第一次出现配置选择器；只读查看“Shimmer 
 未调用Brave/DeepSeek或任何付费API，无GitHub写操作；没有更改服务器、SSH、8788/23334服务或费用历史。完成后两端口仍在127.0.0.1监听。源码差异、暂存文件和忽略规则检查后，仅将代码、测试和文档提交IdeaClip main，正常推送。
 
 协议依据：[GitHub REST最佳实践](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api)，包括串行请求、条件GET、限流及私有资源404歧义。无Token的304不承诺免计入GitHub限额。
+
+## 0.1.6开发交付检查补充（2026-11-09）
+
+新增Commit/PR文件与CI检查，仍不改变原GitHub关联/状态历史或独立人工验收。原Chrome重载0.1.6、真实IdeaClip Commit的18文件/无CI、复制摘要及关闭重开通过；公开VS Code PR在独立配置取得10文件/53项检查，不混入正式任务。660项单元通过（1项独占服务启停跳过），52项相关Chrome Mock通过。详细时间、工具、截图及边界见[开发交付验收](CODEX-DELIVERY-VALIDATION.md)。

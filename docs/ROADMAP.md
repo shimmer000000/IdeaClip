@@ -1,5 +1,7 @@
 # IdeaClip 路线图
 
+**0.1.6 Codex开发交付检查（2026-11-09）**：当前任务关联Commit/PR的文件与增删统计、head SHA的Check Runs/Commit Status、显式workspace范围核对、缺失证据、历史快照、复制验收摘要及人工入口；只读不自动验收/完成，无新依赖及数据库迁移。测试与实机证据见[专项验收](CODEX-DELIVERY-VALIDATION.md)。
+
 **0.1.5 GitHub统一状态（2026-11-08）**：链接格式与远程状态分离，Issue/PR/Commit独立显示，保留失败前成功快照，查询时间和成功时间分开；15分钟边界本地更新及焦点/可见性校正不发送请求。数据结构、权限及人工验收流程不变。完整测试及真实公开样本范围见[专项记录](GITHUB-READONLY-VALIDATION.md)。
 
 **0.1.4 GitHub只读同步补验（2026-11-08）**：固定GitHub REST GET、显式api.github.com授权、短SHA/错误分类、冷却/ETag/限流、跨项目本地总览及ZIP历史快照；不改人工验收/看板状态。620项单元通过（1项独占8788测试跳过），49项Chrome Mock通过。后续Windows-MCP已完成原扩展重载、旧任务/验收保留、原生权限、真实Commit和关闭重开；Issue/PR及错误场景当时仅Mock，见[专项记录](GITHUB-READONLY-VALIDATION.md)。

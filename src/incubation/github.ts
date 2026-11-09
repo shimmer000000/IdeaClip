@@ -1,4 +1,5 @@
 import {remoteSnapshot} from './github-sync';
+import {deliverySnapshot} from './delivery';
 import type { GitHubReference, Task } from './model';
 
 export const REVIEW_STATES = {pending:'待开发',awaiting:'待验收',passed:'验收通过',failed:'验收失败'};
@@ -40,6 +41,7 @@ export function normalizeGitHub(value:GitHubReference):GitHubReference {
   return result;
 }
 export function validateTaskDelivery(task:Task){
+  if(task.deliveryCheck)task.deliveryCheck=deliverySnapshot(task.deliveryCheck);
   if(task.githubRemote)task.githubRemote=remoteSnapshot(task.githubRemote);
   if(task.github)task.github=normalizeGitHub(task.github);
   for(const value of [task.codexSummary,task.acceptanceReview?.notes,task.acceptanceReview?.tests])if(value!==undefined&&(typeof value!=='string'||value.length>10000))throw new Error('开发摘要或验收记录无效或过长。');

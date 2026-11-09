@@ -25,7 +25,7 @@ export function parseRemote(kind:'issue'|'pr'|'commit',raw:unknown,g:GitHubRefer
  if(r.number!==number||r.html_url?.toLowerCase()!==repository+'/'+(kind==='issue'&&r.pull_request?'pull':path)+'/'+number||!['open','closed'].includes(r.state))throw Error('INVALID');
  return {state:kind==='issue'&&r.pull_request?'issue_is_pr':kind==='pr'&&r.merged_at?'merged':kind==='pr'&&r.state==='open'&&r.draft?'draft':r.state,summary:summary(r.title),updatedAt:date(r.updated_at),checkedAt:now};
 }
-async function jsonBounded(response:Response){const reader=response.body?.getReader();if(!reader)throw Error('INVALID');let size=0;const decoder=new TextDecoder('utf-8',{fatal:true});let text='';try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>2*1024*1024)throw Error('INVALID');text+=decoder.decode(value,{stream:true});}return JSON.parse(text+decoder.decode());}finally{await reader.cancel().catch(()=>{});}}
+export async function jsonBounded(response:Response){const reader=response.body?.getReader();if(!reader)throw Error('INVALID');let size=0;const decoder=new TextDecoder('utf-8',{fatal:true});let text='';try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>2*1024*1024)throw Error('INVALID');text+=decoder.decode(value,{stream:true});}return JSON.parse(text+decoder.decode());}finally{await reader.cancel().catch(()=>{});}}
 let rateUntil=0;
 export async function queryGitHub(g:GitHubReference,old?:RemoteSnapshot,fetcher:typeof fetch=fetch,now=Date.now(),timeout=10000):Promise<RemoteSnapshot>{
  g=normalizeGitHub(g);const key=referenceKey(g),previous=old?.key===key?remoteSnapshot(old):undefined;
