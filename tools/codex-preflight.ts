@@ -68,7 +68,7 @@ export function preflightArguments(args:string[]):{mode:'preview'|'mock-once';po
 }
 export async function preflightMain(args:string[]){
  try{
-  const parsed=preflightArguments([...args]);if(!parsed){process.stdout.write('IdeaClip 0.2.1 单次Mock授权门禁（没有真实执行器）\npreview|mock-once --package <绝对JSON> --workspace <绝对工作区> --repository <HTTPS仓库> --project-id <UUID> --task-id <UUID> --branch <预期分支> --allow-path <已有范围，可重复> --codex-executable <明确受信任已安装Codex绝对路径>\n');return;}
+  const parsed=preflightArguments([...args]);if(!parsed){process.stdout.write('IdeaClip 0.2.2 单次Mock授权门禁（没有真实执行器）\npreview|mock-once --package <绝对JSON> --workspace <绝对工作区> --repository <HTTPS仓库> --project-id <UUID> --task-id <UUID> --branch <预期分支> --allow-path <已有范围，可重复> --codex-executable <明确受信任已安装Codex绝对路径>\n');return;}
   const gate=new SingleUseMockGate(()=>localPreflight(parsed.policy)),preview=await gate.preview();
   process.stdout.write(JSON.stringify({format:'IdeaClipExecutionPreflight',schemaVersion:1,...preview,snapshot:{...preview.snapshot,workspace:'[已与明确工作目录核对]'},plannedMethod:'仅内存Mock；未来Codex exec参数仅探测--cd/--sandbox/--json，不构造或执行命令',externalOperations:'当前无外部操作；未来真实执行可能联网、写文件或推送，须另行设计与逐项授权',authorized:false},null,2)+'\n');
   if(parsed.mode==='preview'){if(preview.snapshot.blockers.length)process.exitCode=2;return;}
