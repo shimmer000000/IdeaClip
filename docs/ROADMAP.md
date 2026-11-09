@@ -1,5 +1,7 @@
 # IdeaClip 路线图
 
+**0.1.7 本地交付证据（2026-11-09）**：受限JSON、任务/仓库/范围绑定、版本追加、测试退出码/时间/日志哈希文件核对、GitHub差异与人工验收独立；兼容schema14/ZIP6并强制恢复为历史。无自动执行、新依赖、付费调用。详见[专项验收](CODEX-LOCAL-EVIDENCE-VALIDATION.md)。
+
 **0.1.6 Codex开发交付检查（2026-11-09）**：当前任务关联Commit/PR的文件与增删统计、head SHA的Check Runs/Commit Status、显式workspace范围核对、缺失证据、历史快照、复制验收摘要及人工入口；只读不自动验收/完成，无新依赖及数据库迁移。测试与实机证据见[专项验收](CODEX-DELIVERY-VALIDATION.md)。
 
 **0.1.5 GitHub统一状态（2026-11-08）**：链接格式与远程状态分离，Issue/PR/Commit独立显示，保留失败前成功快照，查询时间和成功时间分开；15分钟边界本地更新及焦点/可见性校正不发送请求。数据结构、权限及人工验收流程不变。完整测试及真实公开样本范围见[专项记录](GITHUB-READONLY-VALIDATION.md)。

@@ -1,0 +1,11 @@
+import {readFile,writeFile} from 'node:fs/promises';
+import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+import {randomUUID} from 'node:crypto';
+const [recordId,projectId,taskId]=process.argv.slice(2),uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+if(![recordId,projectId,taskId].every(x=>uuid.test(x||'')))throw Error('Expected recordId projectId taskId UUIDs only');
+const dir=new URL(`../private/test-evidence/${recordId}/`,import.meta.url),record=JSON.parse(await readFile(new URL('record.json',dir),'utf8'));
+if(record.recordId!==recordId||!/^[a-f0-9]{40}$/.test(record.commitSha)||record.repository!=='https://github.com/shimmer000000/IdeaClip')throw Error('Invalid local record');
+const files=execFileSync('git',['diff-tree','--no-commit-id','--name-only','-r',record.commitSha],{cwd:fileURLToPath(new URL('../',import.meta.url)),encoding:'utf8',windowsHide:true}).trim().split(/\r?\n/).filter(Boolean);
+const report={format:'IdeaClipCodexDelivery',schemaVersion:1,reportId:randomUUID(),projectId,taskId,repository:record.repository,commitSha:record.commitSha,summary:'IdeaClip 0.1.7 受限交付报告、本地文件一致性核对与GitHub独立证据展示。以下测试由本轮本地固定命令记录器执行；导入不构成第三方执行认证。',files,tests:record.tests,notRun:[{command:'Windows PowerShell5.1真实启停','reason':'保留用户8788/23334服务，跳过独占固定端口测试。'},{command:'DeepSeek / Brave 真实接口','reason':'本阶段禁止付费调用。'}],risks:['本地记录可被作者伪造，哈希只证明文件一致性；人工验收独立。'],generatedAt:new Date().toISOString(),localRecordId:recordId};
+await writeFile(new URL('report.json',dir),JSON.stringify(report,null,2),'utf8');await writeFile(new URL('wrong-task.json',dir),JSON.stringify({...report,reportId:randomUUID(),taskId:randomUUID()},null,2),'utf8');process.stdout.write('Created report.json and wrong-task.json in ignored local evidence directory.\n');

@@ -42,7 +42,7 @@ export function scopeState(f:ChangedFile,w:Workspace|undefined,repository:string
 export function deliveryFresh(task:Task,now=Date.now()) {const s=task.deliveryCheck;return !!s&&!!task.github&&s.key===referenceKey(task.github)&&!s.historical&&!s.error&&s.checkedAt!==undefined&&now>=s.checkedAt&&now-s.checkedAt<900000;}
 function matchingSnapshot(task:Task){return task.github&&task.deliveryCheck?.key===referenceKey(task.github)?task.deliveryCheck:undefined;}
 export function missingEvidence(task:Task,w?:Workspace,now=Date.now()){
- const s=matchingSnapshot(task),items=['未取得本地测试日志，不能证明本地测试已执行。','CI和提交核实不等于人工验收通过。'];
+ const s=matchingSnapshot(task),items=[task.localDeliveries?.some(e=>e.localCheck&&!e.localCheck.historical)?'已有本地记录文件一致性核对；尚未独立证明测试执行。':'未取得本地测试日志，不能证明本地测试已执行。','CI和提交核实不等于人工验收通过。'];
  if(!deliveryFresh(task,now))items.push('远程成果尚未取得最新完整快照；请手动检查。');
  if(s?.targets.some(t=>!t.filesComplete))items.push('文件列表不完整，不能证明全部修改都在允许范围内。');
  if(!w?.scope?.length||s?.targets.some(t=>t.files.some(f=>scopeState(f,w,task.github!.repository)==='无法判断')))items.push('未绑定有效开发工作区或文件范围无法判断。');
