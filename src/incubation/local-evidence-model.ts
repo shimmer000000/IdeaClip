@@ -1,4 +1,4 @@
-import {evidenceText} from './evidence-text';
+import {evidenceText} from './evidence-text.ts';
 
 export const REPORT_BYTES=128*1024,RECORD_BYTES=512*1024;
 export interface TestEvidence {id:string;command:string;status:'passed'|'failed';exitCode:number|null;startedAt:string;finishedAt:string;durationMs:number;logExcerpt:string;logSha256:string}

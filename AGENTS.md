@@ -1,5 +1,7 @@
 # IdeaClip 开发约定
 
+- 0.2.0 `tools/codex-handoff.ts`为一次性只读校验/结果收集助手，复用任务包v1/交付v2及Schema。文件/目录、仓库和绝对工作目录均须显式指定；仅固定Git只读命令核对root/origin/脏目录，不fetch，不执行导入命令，不启动Codex或Agent Autoloop。输出始终authorized=false，等待单次明确批准，本轮没有执行/授权消费接口。哈希通过不等于当前审核/作者真实；最终导入仍走浏览器绑定事务、去重与人工确认。链接/联接、穿越、嵌套仓库、`.git`范围及超限拒绝；不修改未提交文件，不持久保存目录授权或写真实账本。合成Git样本仅在test-results；原Chrome实机与隔离Mock分别记录。
+
 <!-- AUTOMATION_TOOLS_START -->
 ## Playwright 与 Windows-MCP 分工
 

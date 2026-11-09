@@ -1,5 +1,5 @@
-import {UUID,shape,digest,evidencePath,evidenceRepository,parseEvidence} from './local-evidence-model';
-import deliverySchema from '../../docs/CODEX-DELIVERY.schema.json';
+import {UUID,shape,digest,evidencePath,evidenceRepository,parseEvidence} from './local-evidence-model.ts';
+import deliverySchema from '../../docs/CODEX-DELIVERY.schema.json' with {type:'json'};
 export const PACKAGE_BYTES=128*1024;
 export const DELIVERY_CONTRACT={format:'IdeaClipCodexDelivery',schemaVersion:2,association:'taskPackage.packageId + taskPackage.contentSha256',schemaFile:'docs/CODEX-DELIVERY.schema.json',schema:deliverySchema.oneOf[1]} as const;
 export interface TaskPackage {
