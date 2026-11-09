@@ -1,3 +1,4 @@
+import {packageHistories} from './task-package-model';
 import {evidenceEntries} from './local-evidence-model';
 import {remoteSnapshot} from './github-sync';
 import {deliverySnapshot} from './delivery';
@@ -42,6 +43,7 @@ export function normalizeGitHub(value:GitHubReference):GitHubReference {
   return result;
 }
 export function validateTaskDelivery(task:Task){
+  if(task.taskPackages)task.taskPackages=packageHistories(task.taskPackages);
   if(task.localDeliveries)task.localDeliveries=evidenceEntries(task.localDeliveries);
   if(task.deliveryCheck)task.deliveryCheck=deliverySnapshot(task.deliveryCheck);
   if(task.githubRemote)task.githubRemote=remoteSnapshot(task.githubRemote);

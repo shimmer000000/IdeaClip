@@ -1,5 +1,7 @@
 # IdeaClip 路线图
 
+**0.1.8 标准Codex本地交接（2026-11-09）**：任务包v1与报告v2，严格任务类型/审核/仓库/目录/范围绑定、预览确认、内容哈希、历史交接与结果关联；无执行器或Agent Autoloop依赖。复用0.1.7和schema14/ZIP6，可选元数据恢复仅历史。723项单元/55项相关Chrome Mock通过，1项固定端口启停跳过；Windows-MCP原Chrome完成实际下载、错误包拒绝、合成结果关联和重开保留，不自动验收或执行。见[专项验收](CODEX-TASK-PACKAGE-VALIDATION.md)。
+
 **0.1.7 本地交付证据（2026-11-09）**：受限JSON、任务/仓库/范围绑定、版本追加、测试退出码/时间/日志哈希文件核对、GitHub差异与人工验收独立；兼容schema14/ZIP6并强制恢复为历史。无自动执行、新依赖、付费调用。694项单元/53项相关Chrome Mock通过（1项固定端口测试跳过）；原Chrome经Windows-MCP完成实际报告导入/核对/错误拒绝/重开，真实GitHub同Commit与文件核对通过，未发现CI。详见[专项验收](CODEX-LOCAL-EVIDENCE-VALIDATION.md)。
 
 **0.1.6 Codex开发交付检查（2026-11-09）**：当前任务关联Commit/PR的文件与增删统计、head SHA的Check Runs/Commit Status、显式workspace范围核对、缺失证据、历史快照、复制验收摘要及人工入口；只读不自动验收/完成，无新依赖及数据库迁移。测试与实机证据见[专项验收](CODEX-DELIVERY-VALIDATION.md)。

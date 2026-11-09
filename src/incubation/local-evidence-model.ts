@@ -2,7 +2,7 @@ import {evidenceText} from './evidence-text';
 
 export const REPORT_BYTES=128*1024,RECORD_BYTES=512*1024;
 export interface TestEvidence {id:string;command:string;status:'passed'|'failed';exitCode:number|null;startedAt:string;finishedAt:string;durationMs:number;logExcerpt:string;logSha256:string}
-export interface CodexReport {format:'IdeaClipCodexDelivery';schemaVersion:1;reportId:string;projectId:string;taskId:string;repository:string;commitSha:string;summary:string;files:string[];tests:TestEvidence[];notRun:{command:string;reason:string}[];risks:string[];generatedAt:string;localRecordId:string|null}
+export interface CodexReport {format:'IdeaClipCodexDelivery';schemaVersion:1|2;taskPackage?:{packageId:string;contentSha256:string};reportId:string;projectId:string;taskId:string;repository:string;commitSha:string;summary:string;files:string[];tests:TestEvidence[];notRun:{command:string;reason:string}[];risks:string[];generatedAt:string;localRecordId:string|null}
 export interface LocalRecord {format:'IdeaClipLocalTestRecord';schemaVersion:1;recordId:string;repository:string;commitSha:string;treeSha:string;tests:TestEvidence[];logs:{testId:string;content:string}[];generatedAt:string}
 export interface LocalCheck {recordId:string;recordDigest:string;checkedAt:number;sourceName:string;historical:boolean}
 export interface EvidenceEntry {version:number;report:CodexReport;fileDigest:string;sourceName:string;importedAt:number;historical:boolean;localCheck?:LocalCheck}
@@ -28,9 +28,10 @@ export function validateTest(value:unknown):TestEvidence {
 function tests(v:unknown){const t=list(v,20).map(validateTest);if(new Set(t.map(x=>x.id)).size!==t.length)return invalid();return t;}
 function generated(v:unknown,items:TestEvidence[]){const s=time(v);if(items.some(t=>Date.parse(t.finishedAt)>Date.parse(s)))return invalid();return s;}
 export function validateCodexReport(value:unknown):CodexReport {
- const r=shape(value,['format','schemaVersion','reportId','projectId','taskId','repository','commitSha','summary','files','tests','notRun','risks','generatedAt','localRecordId']);if(r.format!=='IdeaClipCodexDelivery'||r.schemaVersion!==1)return invalid();
+ const linked=(value as CodexReport)?.schemaVersion===2;const r=shape(value,[...(linked?['taskPackage']:[]),'format','schemaVersion','reportId','projectId','taskId','repository','commitSha','summary','files','tests','notRun','risks','generatedAt','localRecordId']);if(r.format!=='IdeaClipCodexDelivery'||![1,2].includes(r.schemaVersion))return invalid();
+ const ref=linked?shape(r.taskPackage,['packageId','contentSha256']):null;
  const files=list(r.files,300).map(evidencePath),results=tests(r.tests);if(new Set(files).size!==files.length)return invalid();
- return {format:r.format,schemaVersion:1,reportId:id(r.reportId),projectId:id(r.projectId),taskId:id(r.taskId),repository:evidenceRepository(r.repository),commitSha:hash(r.commitSha,40),summary:text(r.summary,2000,true),files,tests:results,notRun:list(r.notRun,20).map(v=>{const n=shape(v,['command','reason']);return {command:text(n.command,512,true),reason:text(n.reason,500,true)};}),risks:list(r.risks,20).map(v=>text(v,500,true)),generatedAt:generated(r.generatedAt,results),localRecordId:r.localRecordId===null?null:id(r.localRecordId)};
+ return {format:r.format,schemaVersion:r.schemaVersion,...(ref?{taskPackage:{packageId:id(ref.packageId),contentSha256:hash(ref.contentSha256)}}:{}),reportId:id(r.reportId),projectId:id(r.projectId),taskId:id(r.taskId),repository:evidenceRepository(r.repository),commitSha:hash(r.commitSha,40),summary:text(r.summary,2000,true),files,tests:results,notRun:list(r.notRun,20).map(v=>{const n=shape(v,['command','reason']);return {command:text(n.command,512,true),reason:text(n.reason,500,true)};}),risks:list(r.risks,20).map(v=>text(v,500,true)),generatedAt:generated(r.generatedAt,results),localRecordId:r.localRecordId===null?null:id(r.localRecordId)};
 }
 export function validateLocalRecord(value:unknown):LocalRecord {
  const r=shape(value,['format','schemaVersion','recordId','repository','commitSha','treeSha','tests','logs','generatedAt']);if(r.format!=='IdeaClipLocalTestRecord'||r.schemaVersion!==1)return invalid();

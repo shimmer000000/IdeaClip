@@ -22,7 +22,7 @@ export function LocalEvidence({project,task,disabled,reload}:{project:Project;ta
   {entry&&<>
    <label>交付报告历史<select value={entry.report.reportId} onChange={e=>setSelected(e.target.value)}>{entries.map(e=><option key={e.report.reportId} value={e.report.reportId}>v{e.version} · {e.report.generatedAt}{e.historical?' · 恢复的历史报告':''}</option>)}</select></label>
    <p>报告ID：{entry.report.reportId}<br/>来源：{entry.sourceName} · 导入时间：{new Date(entry.importedAt).toLocaleString('zh-CN')}<br/>文件SHA256（导入时，非执行签名）：{entry.fileDigest}</p>
-   <p>交付摘要：{entry.report.summary}</p>
+   <p>交付摘要：{entry.report.summary}</p>{entry.report.taskPackage&&<p>关联任务包：{entry.report.taskPackage.packageId}<br/>任务包SHA256：{entry.report.taskPackage.contentSha256}。只关联，不自动验收。</p>}
    <p>Codex声明Commit：{entry.report.commitSha}<br/>GitHub提交核验：{review!.remote}。与Codex声明、CI及人工结论分别记录。</p>
    {!!review!.conflicts.length&&<div role="alert">资料冲突：<ul>{review!.conflicts.map(s=><li key={s}>{s}</li>)}</ul></div>}
    <details><summary>报告修改文件（{entry.report.files.length}）</summary><ul>{entry.report.files.map(s=><li key={s}>{s}</li>)}</ul></details>
