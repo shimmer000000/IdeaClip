@@ -33,7 +33,7 @@ export function safeScope(value:string){
  if(path.split('/').some(p=>p.endsWith('.')||p.endsWith(' ')||p.toLowerCase()==='.git'||/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(p)))fail('SCOPE_UNSAFE');
  return path;
 }
-async function scopeOnDisk(root:string,value:string){
+export async function scopeOnDisk(root:string,value:string){
  const path=join(root,...safeScope(value).split('/'));if(!isInside(root,path))fail('SCOPE_OUTSIDE');
  await safePath(path,true);
  let cursor=root;
@@ -59,7 +59,7 @@ async function schemaCheck(name:string,value:unknown){
  let check=schemaCache.get(name);if(!check){const schema=JSON.parse(await readFile(new URL('../docs/'+name,import.meta.url),'utf8'));check=new Ajv({strict:true,allErrors:false}).compile(schema);schemaCache.set(name,check);}
  if(!check(value))fail('SCHEMA_INVALID');
 }
-async function git(root:string,args:string[]):Promise<string>{
+export async function readGit(root:string,args:string[]):Promise<string>{
  try{return (await runFile('git',['--no-pager','--no-optional-locks','-c','core.fsmonitor=false','-c','core.untrackedCache=false','-C',root,...args],{timeout:10000,maxBuffer:256*1024,windowsHide:true,encoding:'utf8'})).stdout.trim();}
  catch{fail('GIT_READ_FAILED');}
 }
@@ -79,19 +79,19 @@ async function rootJsonFiles(dir:string){
   if(files.length>20)fail('DIRECTORY_LIMIT');
  }return files.sort();
 }
-async function checkedPackage(options:AssistantOptions){
+export async function checkedPackage(options:AssistantOptions){
  const text=await boundedJson(await packageInput(options),PACKAGE_BYTES);await schemaCheck('CODEX-TASK-PACKAGE.schema.json',parseEvidence(text,PACKAGE_BYTES));
  const pack=await decodeTaskPackage(text),repository=evidenceRepository(options.repository);
  if(evidenceRepository(pack.task.repository).toLowerCase()!==repository.toLowerCase())fail('REPOSITORY_MISMATCH');
  const root=await safePath(options.workspace);if(!equalPath(resolve(pack.task.workingDirectory),root)||!isAbsolute(pack.task.workingDirectory))fail('WORKSPACE_MISMATCH');
  await safePath(join(root,'.git'));if(!(await lstat(join(root,'.git'))).isDirectory())fail('GIT_LAYOUT_UNSUPPORTED');
- if(!equalPath(await realpath(await git(root,['rev-parse','--show-toplevel'])),root))fail('REPOSITORY_ROOT_MISMATCH');
+ if(!equalPath(await realpath(await readGit(root,['rev-parse','--show-toplevel'])),root))fail('REPOSITORY_ROOT_MISMATCH');
  // Check both raw URL and effective URL (insteadOf rewrites), never echo either on failure.
  for(const args of [['config','--local','--get-all','remote.origin.url'],['remote','get-url','--all','origin']]){
-  const urls=(await git(root,args)).split(/\r?\n/);if(urls.length!==1||urls[0].replace(/\.git$/,'').toLowerCase()!==repository.toLowerCase())fail('REMOTE_MISMATCH');
+  const urls=(await readGit(root,args)).split(/\r?\n/);if(urls.length!==1||urls[0].replace(/\.git$/,'').toLowerCase()!==repository.toLowerCase())fail('REMOTE_MISMATCH');
  }
  for(const path of pack.task.allowedPaths)await scopeOnDisk(root,path);
- const status=await git(root,['status','--porcelain=v1','-z','--untracked-files=normal','--ignore-submodules=all']);
+ const status=await readGit(root,['status','--porcelain=v1','-z','--untracked-files=normal','--ignore-submodules=all']);
  return {pack,root,dirty:status.length>0};
 }
 export async function inspectHandoff(options:AssistantOptions){

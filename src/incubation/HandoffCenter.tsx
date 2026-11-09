@@ -5,6 +5,7 @@ import {REVIEW_STATES} from './github';
 import {TASK_KINDS} from './instructions';
 import {TaskPackagePanel} from './TaskPackagePanel';
 import {LocalEvidence} from './LocalEvidence';
+import {MockAuthorization} from './MockAuthorization';
 import {RemoteStatus} from './GitHubRemote';
 import {HANDOFF_STATES,handoffRows,filterHandoffs,handoffEvidence,directoryFiles,scanInbox,confirmInbox,type HandoffRow,type InboxFile,type InboxDirectory,type InboxCandidate} from './handoff';
 import './projects.css';
@@ -38,7 +39,7 @@ export function HandoffCenter(){
  async function commit(){if(lock.current)return;lock.current=true;setBusy(true);try{const result=await confirmInbox(candidates,checked,confirmed);setMessage(`导入结果：成功 ${result.filter(x=>x.state==='imported').length}，跳过 ${result.filter(x=>x.state==='skipped').length}，失败 ${result.filter(x=>x.state==='failed').length}。`+result.map(x=>`${x.name}：${x.message}`).join('；'));setCandidates([]);setChecked([]);setConfirmed(false);}catch(e){setMessage(e instanceof Error?e.message:'导入失败，旧记录保留。');}finally{lock.current=false;setBusy(false);}}
  return <div className="shell"><header><a href="notes.html?projects">项目孵化中心</a><a href="notes.html">灵感管理中心</a><a href="settings.html">设置</a></header><main className="projects-main handoff-main">
   <h1>Codex任务交接中心</h1><p>只管理本地文件交接和证据，不启动Codex、Agent Autoloop或任何后台执行器；不联网、不自动验收。</p>
-  <section className="panel" data-local-assistant><h2>本地交接助手 · 0.2.0</h2><p>导出任务包 → 本机一次性只读校验 → 等待单次执行授权 → 交付v2回收预览 → 本页人工确认关联。当前版本不提供执行器，也不能启动Codex。</p><p>助手须明确指定任务包（或专用目录）、目标仓库及工作目录，检查真实Git remote、未提交修改和链接越界。校验成功不证明任务仍获审核；导入前仍会核对当前任务绑定。</p><p>交付文件仍在下方“本地交付收件箱”主动选择、扫描并确认；助手不会后台读取目录、写入浏览器或改变人工验收。使用说明：项目内 docs/CODEX-LOCAL-ASSISTANT.md。</p></section>
+  <section className="panel" data-local-assistant><h2>本地交接助手 · 0.2.1</h2><p>导出任务包 → 本机一次性只读校验 → 等待单次执行授权 → 交付v2回收预览 → 本页人工确认关联。当前版本只有单次Mock门禁，不提供真实执行器，也不能启动Codex。</p><p>助手须明确指定任务包、项目/任务、分支、仓库、工作目录及已有范围；核对真实Git与CLI后才允许独立确认单次Mock。浏览器仅提供明确标注的Mock预演，不声称已读取本机Git。请在任务历史详情中查看“单次授权与安全预检”。</p><p>交付文件仍在下方收件箱主动选择和确认，不改变人工验收。使用说明：项目内 docs/CODEX-EXECUTION-SAFETY.md。</p></section>
   <section className="panel"><h2>已导出任务包</h2>
    <div className="handoff-filters"><label>按项目筛选<select aria-label="交接项目筛选" value={projectFilter} onChange={e=>setProjectFilter(e.target.value)}><option value="">全部已加载项目</option>{projects?.slice(0,projectLimit).map(p=><option key={p.id} value={p.id}>{p.title}</option>)}</select></label>
    <label>按状态筛选<select aria-label="交接状态筛选" value={state} onChange={e=>setState(e.target.value)}><option value="">全部状态</option>{Object.entries(HANDOFF_STATES).map(([k,v])=><option key={k} value={k}>{v}</option>)}<option value="review">待人工验收</option><option value="expired">已失效或历史</option></select></label>
@@ -67,7 +68,7 @@ export function HandoffCenter(){
   </section>
   {selectedProject&&selectedTask&&evidence&&<section className="panel" data-handoff-detail><h2>交付证据：{selectedTask.title}</h2><p>项目：{selectedProject.title} · 人工验收：{REVIEW_STATES[selectedTask.acceptanceReview?.state??'pending']} · 看板：{selectedTask.status}（仅原项目中明确操作可改变）</p>
    <dl><dt>Codex声明</dt><dd>{evidence.codex}</dd><dt>本地测试</dt><dd>{evidence.local}</dd><dt>GitHub Commit/PR对照</dt><dd>{evidence.remote}</dd><dt>CI</dt><dd>{evidence.ci}</dd><dt>允许修改范围</dt><dd>{evidence.scope}</dd></dl><h3>缺失证据及限制</h3><ul>{evidence.missing.map((s,i)=><li key={i}>{s}</li>)}</ul>
-   <RemoteStatus task={selectedTask}/><TaskPackagePanel project={selectedProject} task={selectedTask} disabled={busy} reload={async()=>{}}/><LocalEvidence project={selectedProject} task={selectedTask} disabled={busy} reload={async()=>{}}/>
+   <RemoteStatus task={selectedTask}/><TaskPackagePanel project={selectedProject} task={selectedTask} disabled={busy} reload={async()=>{}}/><MockAuthorization key={selectedProject.id+':'+selectedTask.id} project={selectedProject} task={selectedTask} disabled={busy}/><LocalEvidence project={selectedProject} task={selectedTask} disabled={busy} reload={async()=>{}}/>
    <a href={`notes.html?projects&open=${encodeURIComponent(selectedProject.id)}`}>返回项目进行人工验收</a>
   </section>}
  </main></div>;

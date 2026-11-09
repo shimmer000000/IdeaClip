@@ -1,7 +1,7 @@
 {
   "name": "ideaclip",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
@@ -16,7 +16,8 @@
     "test:live": "playwright test --config playwright.live.config.ts",
     "test:native": "playwright test --config playwright.native.config.ts",
     "proxy:research": "node tools/research-proxy.ts",
-    "handoff:local": "node tools/codex-handoff.ts"
+    "handoff:local": "node tools/codex-handoff.ts",
+    "handoff:preflight": "node tools/codex-preflight.ts"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
