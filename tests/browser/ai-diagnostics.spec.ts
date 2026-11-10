@@ -2,7 +2,7 @@ import {test,expect,type Page} from '@playwright/test';
 import {collectionHarness} from './collection-harness';
 import {seedLibrary} from './library-fixture';
 import {mockCompletion,mockReport} from '../ai-fixture';
-import {BUILTINS,LEAN_ID} from '../../src/skills/model';
+import {BUILTINS,LEAN_ID,COMPETITOR_ID} from '../../src/skills/model';
 const key='synthetic-diagnostic-test-key',secret='PRIVATE_MODEL_BODY_DO_NOT_EXPORT',endpoint='http://127.0.0.1:45678/mock/chat/completions';
 let h:Awaited<ReturnType<typeof collectionHarness>>,page:Page,settings:Page,calls=0,response:unknown,lastRequest:any;
 test.beforeEach(async()=>{
@@ -12,6 +12,14 @@ test.beforeEach(async()=>{
  page=await h.context.newPage();await page.goto(`chrome-extension://${h.extensionId}/analysis.html?noteId=n-00005`);
 });
 test.afterEach(async()=>{await h.context.close();});
+test('竞争第6栏fact无证据：严格拒绝、诊断持久化，查看不重发',async()=>{
+ const skill=BUILTINS.find(s=>s.id===COMPETITOR_ID)!;const value={schemaVersion:2,sections:Object.fromEntries(skill.sections.map(s=>[s.key,[{kind:s.key==='researchGaps'?'fact':'hypothesis',text:'待调查竞品差异。',evidence:null}]]))};response=mockCompletion(value);
+ await page.getByLabel('选择分析模板',{exact:true}).selectOption(COMPETITOR_ID);await run();await expect(page.getByRole('alert')).toContainText('ai_report_evidence_required');await page.getByRole('button',{name:'查看诊断报告',exact:true}).click();await expect(page.locator('[data-ai-diagnostic-report]')).toContainText('sections.column-6.item-1.evidence');await expect(page.locator('.ai-report')).toHaveCount(0);expect(calls).toBe(1);expect(lastRequest.messages[0].content).toContain('fact配evidence:null或空白必定被拒绝');
+ await page.close();page=await h.context.newPage();await page.goto(`chrome-extension://${h.extensionId}/analysis.html?noteId=n-00005`);await page.getByRole('button',{name:'查看诊断报告',exact:true}).click();await expect(page.locator('[data-ai-diagnostic-report]')).toContainText('ai_report_evidence_required');expect(calls).toBe(1);
+});
+test('竞争六栏简洁假设成功保存与重开，无额外调用',async()=>{
+ const skill=BUILTINS.find(s=>s.id===COMPETITOR_ID)!;response=mockCompletion({schemaVersion:2,sections:Object.fromEntries(skill.sections.map(s=>[s.key,[{kind:'hypothesis',text:'待调查竞品差异及需求。',evidence:null}]]))});await page.getByLabel('选择分析模板',{exact:true}).selectOption(COMPETITOR_ID);await run();await expect(page.locator('.ai-report .ai-section-toggle')).toHaveCount(6);await expect(page.locator('.ai-report')).toContainText('版本 1.0.1');await page.reload();await expect(page.locator('.ai-report .ai-section-toggle')).toHaveCount(6);expect(calls).toBe(1);
+});
 function leanReport(){const skill=BUILTINS.find(s=>s.id===LEAN_ID)!;return {schemaVersion:2,sections:Object.fromEntries(skill.sections.map(s=>[s.key,[{kind:'hypothesis',text:'资料不足，先核验需求再决定投入。',evidence:null}]]))} as {schemaVersion:number;sections:Record<string,Record<string,unknown>[]>};}
 for(const extra of [false,true])test('0.2.7低成本首栏第3条'+(extra?'多余字段':'缺少evidence')+'：精确诊断、脱敏重开且一次请求',async()=>{
  await page.getByLabel('选择分析模板',{exact:true}).selectOption(LEAN_ID);const r=leanReport(),a=r.sections.constraints;a.push({...a[0]},{...a[0]});if(extra)a[2].PRIVATE_LEAN_FIELD=secret;else delete a[2].evidence;response=mockCompletion(r);await run();await expect(page.getByRole('alert')).toContainText('ai_report_claim');

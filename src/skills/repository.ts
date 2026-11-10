@@ -1,7 +1,7 @@
 import { redact } from '../backup/model';
 import { db, type IdeaClipDB } from '../storage';
 import { announceAIChange } from '../ai/events';
-import { BUSINESS_ID, LEAN_ID, BUILTINS, skillSignature, validateSkill, type Skill } from './model';
+import { BUSINESS_ID, LEAN_ID, COMPETITOR_ID, BUILTINS, skillSignature, validateSkill, type Skill } from './model';
 import { signalQueue } from '../automation/signals';
 
 export interface SkillPreferences { id: 'general'; defaultId: string; version: string }
@@ -10,7 +10,7 @@ function currentBuiltin(value:unknown):Skill {
   const skill=validateSkill(value),current=BUILTINS.find(b=>b.id===skill.id);
   // Upgrade only the exact former application definition; preserve local enabled state.
   // Old snapshots/bindings remain untouched and no longer match the new signature.
-  if(current&&[BUSINESS_ID,LEAN_ID].includes(skill.id)&&skill.version==='1.0.0'&&JSON.stringify({...skill,enabled:true,updatedAt:0})===JSON.stringify({...current,version:'1.0.0'}))return {...current,enabled:skill.enabled,updatedAt:skill.updatedAt};
+  if(current&&[BUSINESS_ID,LEAN_ID,COMPETITOR_ID].includes(skill.id)&&skill.version==='1.0.0'&&JSON.stringify({...skill,enabled:true,updatedAt:0})===JSON.stringify({...current,version:'1.0.0'}))return {...current,enabled:skill.enabled,updatedAt:skill.updatedAt};
   return skill;
 }
 export async function listSkills(database = db) { const rows = await database.aiTemplates.toArray(); return [...BUILTINS.filter(b => !rows.some(r => r.id === b.id)), ...rows].map(currentBuiltin); }
