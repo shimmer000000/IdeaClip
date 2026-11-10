@@ -2,7 +2,7 @@ import {test,expect,type Page} from '@playwright/test';
 import {collectionHarness} from './collection-harness';
 import {seedLibrary} from './library-fixture';
 import {mockCompletion,mockReport} from '../ai-fixture';
-import {BUILTINS,LEAN_ID,COMPETITOR_ID} from '../../src/skills/model';
+import {BUILTINS,LEAN_ID,COMPETITOR_ID,CODEX_ID} from '../../src/skills/model';
 const key='synthetic-diagnostic-test-key',secret='PRIVATE_MODEL_BODY_DO_NOT_EXPORT',endpoint='http://127.0.0.1:45678/mock/chat/completions';
 let h:Awaited<ReturnType<typeof collectionHarness>>,page:Page,settings:Page,calls=0,response:unknown,lastRequest:any;
 test.beforeEach(async()=>{
@@ -12,6 +12,11 @@ test.beforeEach(async()=>{
  page=await h.context.newPage();await page.goto(`chrome-extension://${h.extensionId}/analysis.html?noteId=n-00005`);
 });
 test.afterEach(async()=>{await h.context.close();});
+for(const invalid of [true,false])test('Codex六栏逐字证据'+(invalid?'不匹配诊断':'精确引文保存')+'，重开不重发',async()=>{
+ const skill=BUILTINS.find(s=>s.id===CODEX_ID)!;const evidence=invalid?'改写后并非原文的合成引文'.repeat(10).slice(0,101):'正文5：有价值的网页内容。';const sections=Object.fromEntries(skill.sections.map(s=>[s.key,[{kind:s.key==='requirements'?'fact':'hypothesis',text:'合成工程建议，待审核且不授权执行。',evidence:s.key==='requirements'?evidence:null}]]));response=mockCompletion({schemaVersion:2,sections});await page.getByLabel('选择分析模板',{exact:true}).selectOption(CODEX_ID);await run();await expect.poll(()=>calls).toBe(1);expect(lastRequest.messages[0].content).toContain('不能拼接不同句子、字段或段落');
+ if(invalid){await expect(page.getByRole('alert')).toContainText('ai_report_quote_mismatch');await page.getByRole('button',{name:'查看诊断报告',exact:true}).click();await expect(page.locator('[data-ai-diagnostic-report]')).toContainText('sections.column-1.item-1.evidence');await expect(page.locator('.ai-report')).toHaveCount(0);}else{await expect(page.locator('.ai-report .ai-section-toggle')).toHaveCount(6);await expect(page.locator('.ai-report')).toContainText('版本 1.0.1');}
+ await page.close();page=await h.context.newPage();await page.goto(`chrome-extension://${h.extensionId}/analysis.html?noteId=n-00005`);if(invalid){await page.getByRole('button',{name:'查看诊断报告',exact:true}).click();await expect(page.locator('[data-ai-diagnostic-report]')).toContainText('ai_report_quote_mismatch');}else await expect(page.locator('.ai-report .ai-section-toggle')).toHaveCount(6);expect(calls).toBe(1);
+});
 test('竞争第6栏fact无证据：严格拒绝、诊断持久化，查看不重发',async()=>{
  const skill=BUILTINS.find(s=>s.id===COMPETITOR_ID)!;const value={schemaVersion:2,sections:Object.fromEntries(skill.sections.map(s=>[s.key,[{kind:s.key==='researchGaps'?'fact':'hypothesis',text:'待调查竞品差异。',evidence:null}]]))};response=mockCompletion(value);
  await page.getByLabel('选择分析模板',{exact:true}).selectOption(COMPETITOR_ID);await run();await expect(page.getByRole('alert')).toContainText('ai_report_evidence_required');await page.getByRole('button',{name:'查看诊断报告',exact:true}).click();await expect(page.locator('[data-ai-diagnostic-report]')).toContainText('sections.column-6.item-1.evidence');await expect(page.locator('.ai-report')).toHaveCount(0);expect(calls).toBe(1);expect(lastRequest.messages[0].content).toContain('fact配evidence:null或空白必定被拒绝');
