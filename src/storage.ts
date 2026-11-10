@@ -31,7 +31,7 @@ export interface Project extends Partial<ProjectDetails> { id: string; title: st
 export interface Screenshot {
   id: string;
   blob: Blob;
-  kind: 'visible' | 'region';
+  kind: 'visible' | 'region' | 'full';
   width: number;
   height: number;
   originalBytes: number;
