@@ -1,8 +1,9 @@
 import type {Viewport} from './geometry';
 export interface LongPage extends Viewport {pageHeight:number;pageWidth:number}
+export type LongAction='start'|'frame'|'settle'|'check'|'end';
 
 // Self-contained isolated-world function: never fetches, reads form values or executes page code.
-export async function longPage(action:'start'|'frame'|'check'|'end',id:string,y=0):Promise<LongPage>{
+export async function longPage(action:LongAction,id:string,y=0):Promise<LongPage>{
  type State={id:string;end:()=>void;style:HTMLStyleElement;hidden:[HTMLElement,string,string][]};
  const scope=globalThis as typeof globalThis&{__icLong?:State;__ideaClipCancel?:()=>void};
  // At fractional browser zoom innerHeight is rounded, while the visible CSS height is not.
@@ -30,6 +31,18 @@ export async function longPage(action:'start'|'frame'|'check'|'end',id:string,y=
   scrollTo({left:0,top:y,behavior:'instant'});
   await new Promise(resolve=>setTimeout(resolve,180));
   await Promise.race([new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))),new Promise<never>((_,reject)=>setTimeout(()=>reject(new Error('网页未及时渲染，长截图已停止。')),1500))]);
+ }
+ if(action==='settle'){
+  let previous=measure(),stable=0;
+  for(let sample=0;sample<10;sample++){
+   await new Promise(resolve=>setTimeout(resolve,200));
+   if(scope.__icLong?.id!==id)throw new Error('长截图已取消；未保存不完整图片。');
+   const current=measure();
+   stable=Object.keys(current).every(key=>current[key as keyof LongPage]===previous[key as keyof LongPage])?stable+1:0;
+   if(stable>=3)return current;
+   previous=current;
+  }
+  throw new Error('页面仍在加载或排版变化：2秒内尺寸未稳定，未开始拼图；请等待加载完成，或改用可见页面/区域截图。');
  }
  if(scope.__icLong?.id!==id)throw new Error('长截图已取消；未保存不完整图片。');
  return measure();

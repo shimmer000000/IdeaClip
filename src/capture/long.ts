@@ -1,13 +1,15 @@
 import {sameViewport} from './geometry';
 import {decodeCapture} from './image';
-import type {LongPage} from './long-page';
+import type {LongPage,LongAction} from './long-page';
 import {validateCaptureRange,type CaptureRange} from './range';
 export const LONG_MAX_HEIGHT=20000,LONG_MAX_TILES=40,LONG_MAX_BYTES=6*1024*1024;
 export function checkLongPage(initial:LongPage,current=initial,segmented=false){
  if(![current.width,current.height,current.pageHeight,current.pageWidth,current.dpr].every(n=>Number.isFinite(n)&&n>0)||current.scale!==1)throw new Error('无法确定长截图尺寸或缩放，请重试。');
  if(!segmented&&(current.pageHeight>LONG_MAX_HEIGHT||Math.ceil(current.pageHeight/current.height)>LONG_MAX_TILES))throw new Error('网页过长：整页长图最多20000 CSS像素、40屏；请点击“分段截长图”。');
  if(current.pageWidth>current.width+2)throw new Error('页面存在横向滚动，请调整网页宽度后重试；未裁掉横向内容。');
- if(initial.width!==current.width||initial.height!==current.height||initial.dpr!==current.dpr||initial.href!==current.href||initial.pageHeight!==current.pageHeight||initial.pageWidth!==current.pageWidth)throw new Error('页面尺寸或内容高度发生变化，请等待加载完成后重截；未保存不完整图片。');
+ const size=(n:number)=>Math.round(n*100)/100;
+ const reason=initial.href!==current.href?'网页地址发生变化':initial.dpr!==current.dpr?'网页缩放发生变化':initial.width!==current.width||initial.height!==current.height?`可视区域发生变化（${size(initial.width)}×${size(initial.height)} → ${size(current.width)}×${size(current.height)} CSS像素）`:initial.pageWidth!==current.pageWidth?'网页宽度发生变化':initial.pageHeight!==current.pageHeight?`网页高度发生变化（${size(initial.pageHeight)} → ${size(current.pageHeight)} CSS像素）`:null;
+ if(reason)throw new Error(`${reason}；请等待加载完成，或改用可见页面/区域截图；未保存不完整图片。`);
 }
 export function segmentRange(page:LongPage,previous?:CaptureRange):CaptureRange{
  checkLongPage(page,page,true);if(previous){validateCaptureRange(previous);if(previous.pageHeight!==page.pageHeight||previous.viewportWidth!==page.width||previous.viewportHeight!==page.height)throw new Error('网页高度或排版已变化，不能延续旧分段；请从当前位置重新分段截图。');}
@@ -19,10 +21,34 @@ export function longSlice(covered:number,page:LongPage){
  if(page.scrollX!==0||page.scrollY>covered+0.01||to<=covered||from<0)throw new Error('页面无法连续滚动，长截图已停止；请使用区域截图。');
  return {from,to};
 }
-export async function stitchLongPage(control:(action:'start'|'frame'|'check'|'end',id:string,y?:number)=>Promise<LongPage>,capture:()=>Promise<string>,assertActive:()=>Promise<void>,segmented=false,previous?:CaptureRange){
+type LongControl=(action:LongAction,id:string,y?:number)=>Promise<LongPage>;
+export async function prepareLongPage(control:LongControl,id:string,initial:LongPage,assertActive:()=>Promise<void>,segmented=false,previous?:CaptureRange){
+ checkLongPage(initial,initial,segmented);
+ const requested=segmented?segmentRange(initial,previous):{startY:0,endY:initial.pageHeight};
+ let y=requested.startY;
+ for(let warm=0;;warm++){
+  if(warm>=LONG_MAX_TILES)throw new Error('网页持续加载或准备超过40屏，未开始拼图；请缩小范围，或使用可见页面/区域截图。');
+  await assertActive();const current=await control('frame',id,y);
+  // Only document height may settle before any pixels are captured. Identity and viewport remain strict.
+  checkLongPage({...initial,pageHeight:current.pageHeight},current,segmented);
+  const end=segmented?Math.min(current.pageHeight,requested.endY):current.pageHeight;
+  // No pixels are taken here. Reserve one CSS pixel for fractional scroll quantization,
+  // just as the actual capture loop does with its overlap.
+  const bottom=longSlice(y+1,current).to;
+  if(bottom>=end-0.01)break;
+  const next=bottom-1;if(next<=y)throw new Error('网页无法连续预加载，未开始拼图；请使用区域截图。');y=next;
+ }
+ await assertActive();await control('frame',id,requested.startY);
+ const settled=await control('settle',id);await assertActive();
+ checkLongPage({...initial,pageHeight:settled.pageHeight},settled,segmented);
+ // A continued segment must still match its saved layout after preparation.
+ if(segmented&&previous)segmentRange(settled,previous);
+ return settled;
+}
+export async function stitchLongPage(control:LongControl,capture:()=>Promise<string>,assertActive:()=>Promise<void>,segmented=false,previous?:CaptureRange){
  const id=crypto.randomUUID();let canvas:OffscreenCanvas|undefined,originalBytes=0;
  try{
-  await assertActive();const initial=await control('start',id);checkLongPage(initial,initial,segmented);
+  await assertActive();const starting=await control('start',id);const initial=await prepareLongPage(control,id,starting,assertActive,segmented,previous);
   const range=segmented?segmentRange(initial,previous):{startY:0,endY:initial.pageHeight},length=range.endY-range.startY;
   const check=(current:LongPage)=>checkLongPage(initial,current,segmented);
   let covered=range.startY,tiles=0;
