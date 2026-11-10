@@ -7,6 +7,8 @@ export const REPORT_ERRORS={
  ai_report_evidence_required:'来源陈述必须提供非空原文证据。',ai_report_quote_mismatch:'原文证据不是已发送文本中的连续逐字摘录；空白、换行和Unicode差异也会被拒绝。',
  ai_report_schema:'报告未通过最终JSON Schema校验。',ai_report_validator:'本地报告校验器异常，不能判定结果有效。',
  ai_report_format:'报告格式化失败，尚未生成可保存报告。',
+ ai_report_evidence_ref:'证据编号不属于本次预览或原文切片已变化；未自动替换或修正引用。',
+ ai_report_evidence_catalog:'证据目录超过安全数量上限，请缩减资料后重新预览；未自动截断。',
 } as const;
 export type ReportErrorCode=keyof typeof REPORT_ERRORS;
 export interface ValidationDetail {field:string;rule:string;expected:string;actual:string;arrayItems:number|null;characters:number|null;sectionIndex:number|null;itemIndex:number|null}

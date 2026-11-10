@@ -32,7 +32,8 @@ test.beforeAll(async () => {
       if (mode === 'redirect') { response.writeHead(302, { Location: stolenEndpoint }).end(); return; }
       const requestBody = JSON.parse(body || '{}');
       const system = requestBody.messages?.[0]?.content as string;
-      const schema = system?.includes('Schema：') ? JSON.parse(system.slice(system.indexOf('Schema：') + 7)) : null;
+      // The Schema is one JSON.stringify line; later fixed protocol guidance is not JSON.
+      const schema = system?.includes('Schema：') ? JSON.parse(system.slice(system.indexOf('Schema：') + 7).split('\n')[0]) : null;
       const report = schema?.properties.projects ? comparisonFixture(JSON.parse(requestBody.messages[1].content).untrustedSources) : schema ? { schemaVersion: schema.properties.schemaVersion.const, sections: Object.fromEntries(schema.properties.sections.required.map((key: string) => [key, [{ kind: 'hypothesis', text: '这是本机 Mock 生成的中文开发与商业验证建议，先访谈用户并测试。', evidence: null }]])) } : mockReport(); if (mode === 'echo' && 'sections' in report) report.sections.summary[0].text = key;
       response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify(mode === 'invalid' ? mockCompletion({ invalid: true }) : mockCompletion(report)));
     });

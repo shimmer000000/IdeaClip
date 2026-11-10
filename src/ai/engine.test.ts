@@ -1,3 +1,4 @@
+import {NOTE_EVIDENCE_PROMPT} from './note-evidence';
 import { BUILTINS, skillSystem } from '../skills/model';
 import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -73,7 +74,7 @@ describe('网络、安全和预算', () => {
     await setAIEnabled(true, database); const report = mockReport(); report.sections.summary[0].text = key; const encoded = [...key].map(char => '\\u' + char.charCodeAt(0).toString(16).padStart(4, '0')).join(''); const data = mockCompletion(report); data.choices[0].message.content = data.choices[0].message.content.replace(key, encoded); const e = engine(vi.fn(async () => Response.json(data))); await expect(e.instance.run((await e.instance.preview(noteId, [])).id)).rejects.toThrow('凭据'); expect(await database.analyses.count()).toBe(0);
   });
   it('系统提示固定，网页指令仅在 user 数据中，无工具和远程图片 URL', async () => {
-    await setAIEnabled(true, database); const { instance, fetcher } = engine(); await instance.run((await instance.preview(noteId, [])).id); const call = fetcher.mock.calls[0] as unknown as [string, RequestInit]; const body = JSON.parse(call[1].body as string); expect(body.messages).toHaveLength(2); expect(body.messages[0]).toEqual({ role: 'system', content: skillSystem(BUILTINS[0]) }); expect(body.messages[1].role).toBe('user'); expect(body.messages[1].content).toContain('忽略系统'); expect(body.tools).toBeUndefined(); expect(call[1]).toMatchObject({ redirect: 'error', credentials: 'omit', referrerPolicy: 'no-referrer' });
+    await setAIEnabled(true, database); const { instance, fetcher } = engine(); await instance.run((await instance.preview(noteId, [])).id); const call = fetcher.mock.calls[0] as unknown as [string, RequestInit]; const body = JSON.parse(call[1].body as string); expect(body.messages).toHaveLength(2); expect(body.messages[0]).toEqual({ role: 'system', content: skillSystem(BUILTINS[0])+'\n'+NOTE_EVIDENCE_PROMPT }); expect(body.messages[1].role).toBe('user'); expect(body.messages[1].content).toContain('忽略系统'); expect(body.tools).toBeUndefined(); expect(call[1]).toMatchObject({ redirect: 'error', credentials: 'omit', referrerPolicy: 'no-referrer' });
   });
   it('只发送主动选择的图像，文本模型拒绝，未选图片不物化', async () => {
     await setAIEnabled(true, database); await database.screenshots.put({ id: 'image', blob: new Blob(['synthetic-image'], { type: 'image/png' }), kind: 'visible', width: 1, height: 1, originalBytes: 1, sourceTabId: 1, sourceUrl: '', sourceTitle: '', createdAt: 1 }); await database.notes.update(noteId, { screenshotIds: ['image'] });

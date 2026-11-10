@@ -1,3 +1,4 @@
+import {noteEvidenceCatalog,resolveNoteEvidence,NOTE_EVIDENCE_PROMPT,type NoteEvidenceRef} from './note-evidence';
 import { evidenceCatalog, resolveEvidence, type EvidenceRef } from '../research/online/evidence-catalog';
 import { assertReview, snapshotHash } from '../research/workflow/repository';
 import { PLAN_SKILL, FIELDS } from '../incubation/model';
@@ -24,8 +25,8 @@ import {makeDiagnostic,saveDiagnostic,markDiagnosticSaved,unknownChecks,type AID
 
 export type AIStage='authorization'|'reservation'|'transport'|'json'|'schema'|'evidence'|'validator'|'format'|'storage';
 export interface AIUsage { id: string; noteId: string; day: string; createdAt: number; model: string; status: 'reserved' | 'succeeded' | 'failed' | 'cancelled'; reservedMicros: number; estimatedInput: number; maxOutput: number; inputTokens?: number; outputTokens?: number; errorCode?: string; errorStage?:AIStage; responseReceived?:boolean; reportSaved?:boolean }
-export interface Preview { configuredMaxOutput?:number; workflowId?:string; researchId?:string; researchSources?:ResearchSource[]; projectId?: string; sources?: Source[]; id: string; noteId: string; createdAt: number; config: AIConfig; title: string; content: string; body: string; url: string; imageIds: string[]; inputTokensUpper: number; costMicros: number; inputDigest: string; revision: number; template: Skill; systemPrompt: string; requestText: string }
-interface Prepared { evidence?:EvidenceRef[]; workflowHash?:string; researchHash?:string; rawResearch?:ResearchSource[]; preview: Preview; images: Blob[]; source: string; credentialVersion: string | null; templateSignature: string; rawSources?: Source[]; projectHash?: string }
+export interface Preview { noteEvidenceCount?:number; configuredMaxOutput?:number; workflowId?:string; researchId?:string; researchSources?:ResearchSource[]; projectId?: string; sources?: Source[]; id: string; noteId: string; createdAt: number; config: AIConfig; title: string; content: string; body: string; url: string; imageIds: string[]; inputTokensUpper: number; costMicros: number; inputDigest: string; revision: number; template: Skill; systemPrompt: string; requestText: string }
+interface Prepared { noteEvidence?:NoteEvidenceRef[]; evidence?:EvidenceRef[]; workflowHash?:string; researchHash?:string; rawResearch?:ResearchSource[]; preview: Preview; images: Blob[]; source: string; credentialVersion: string | null; templateSignature: string; rawSources?: Source[]; projectHash?: string }
 export interface AnalysisResult { analysis: Analysis; saved: boolean;diagnostic?:AIDiagnostic }
 interface Dependencies { transport: AITransport; credential: typeof getCredential; permission: typeof hasPermission; lock: <T>(action: () => Promise<T>, signal: AbortSignal) => Promise<T>; now: () => number }
 const dependencies = (): Dependencies => ({ transport: chatTransport(), credential: getCredential, permission: hasPermission, now: Date.now, lock: async (action, signal) => { if (!globalThis.navigator?.locks) throw new RequestFailure('lock', '此环境不支持安全请求队列，请在 Chrome / Edge 扩展中运行。'); return navigator.locks.request('ideaclip-manual-ai', { signal }, action); } });
@@ -83,13 +84,15 @@ export class AIEngine {
       systemPrompt = skillSystem(safeTemplate).split('Schema：')[0] + '这是多灵感横向对比。项目必须匹配 noteId，证据只能来自对应项目原文。评分仅启发式，不能假装市场验证；0～10 越高越有利（成本/难度/风险越低则分越高）。给出优势劣势、未知、风险、任务、排序理由、7天计划和不投入条件。Schema：' + JSON.stringify(COMPARISON_SCHEMA);
     }
     if(projectId) systemPrompt = skillSystem(PLAN_SKILL);
+    const noteEvidence=!projectId&&!comparisonIds?noteEvidenceCatalog(input):undefined;
+    if(noteEvidence){source=JSON.stringify({...JSON.parse(source),untrustedSourceEvidence:noteEvidence.map(({id,field,text})=>({id,field,text}))});systemPrompt+='\n'+NOTE_EVIDENCE_PROMPT;}
     const bytes = new TextEncoder().encode(source).length;
     if (bytes > 200000) throw new RequestFailure('size', '待发送文本超过 200000 字节，请精简笔记后重新预览；未自动截断。');
     const inputTokensUpper = new TextEncoder().encode(systemPrompt + source).length + 4096 + imageIds.length * config.imageTokenAllowance;
     const costMicros = Math.max(1, Math.ceil(inputTokensUpper * config.inputUsdPerMillion + config.maxOutput * config.outputUsdPerMillion));
     const id = crypto.randomUUID(); const inputDigest = await digest(new Blob([source, ...snapshot.images]));
-    const preview: Preview = { configuredMaxOutput,id, noteId, createdAt: this.dependencies.now(), config, ...input, imageIds: [...imageIds], inputTokensUpper, costMicros, inputDigest, revision: note.revision, projectId, sources, template: safeTemplate, systemPrompt, requestText: source };
-    this.previews.set(id, { preview: structuredClone(preview), images: snapshot.images, source, credentialVersion: credential?.version ?? null, templateSignature: skillSignature(template), rawSources, projectHash });
+    const preview: Preview = { ...(noteEvidence?{noteEvidenceCount:noteEvidence.length}:{}),configuredMaxOutput,id, noteId, createdAt: this.dependencies.now(), config, ...input, imageIds: [...imageIds], inputTokensUpper, costMicros, inputDigest, revision: note.revision, projectId, sources, template: safeTemplate, systemPrompt, requestText: source };
+    this.previews.set(id, { noteEvidence, preview: structuredClone(preview), images: snapshot.images, source, credentialVersion: credential?.version ?? null, templateSignature: skillSignature(template), rawSources, projectHash });
     // Return a detached value: callers cannot change the internally confirmed payload.
     return structuredClone(preview);
   }
@@ -187,7 +190,7 @@ export class AIEngine {
         }
         let report;phase='schema';try{
           if(preview.template.id===BUSINESS_ID)validateReportSchema(parsed);else validateSkillReportSchema(parsed,preview.template);
-          checks.schemaValid=true;phase='evidence';report=validateSkillReport(parsed,preview.template,[preview.title,preview.content,preview.body,preview.url,...(preview.sources??[]).flatMap(s=>[s.title,s.content,s.body,s.url])].join('\n'));checks.evidenceValid=true;
+          checks.schemaValid=true;phase='evidence';const resolved=prepared.noteEvidence?resolveNoteEvidence(parsed as import('../skills/model').SkillReport,prepared.noteEvidence,preview):parsed;report=validateSkillReport(resolved,preview.template,[preview.title,preview.content,preview.body,preview.url,...(preview.sources??[]).flatMap(s=>[s.title,s.content,s.body,s.url])].join('\n'));checks.evidenceValid=true;
         }catch(error){if(error instanceof ReportValidationError)throw error;throw new ReportValidationError('ai_report_validator');}
         if (credential?.value && Object.values(report.sections).some(claims => claims.some(claim => claim.text.includes(credential.value) || claim.evidence?.includes(credential.value)))) throw new RequestFailure('credential', '响应包含凭据，已丢弃，未保存或显示。');
         phase='format';const createdAt=this.dependencies.now();let analysis:Analysis;try{analysis={id:preview.id,noteId:preview.noteId,createdAt,projectId:preview.projectId,...(preview.projectId?{sources:preview.sources}:{}),sourceUrl:preview.url,template:preview.template,...(preview.template.id===BUSINESS_ID?{content:markdown(validateReport(report),preview.config.model,createdAt),report:validateReport(report)}:{content:skillMarkdown(report,preview.template,preview.config.model,createdAt),skillReport:report}),model:preview.config.model,provider:preview.config.provider,endpointOrigin:new URL(preview.config.endpoint).origin,inputDigest:preview.inputDigest,inputRevision:preview.revision,imageCount:preview.imageIds.length};checks.inMemoryReport=true;}catch{throw new ReportValidationError('ai_report_format');}
