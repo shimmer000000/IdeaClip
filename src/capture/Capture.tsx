@@ -2,12 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../storage';
 import { EditorEntry } from '../inspiration/Entry';
-
-async function startCapture(kind: 'visible' | 'region' | 'full' | 'segment', screenshotId?: string, nextSegment = false) {
-  if (!globalThis.chrome?.runtime?.id) throw new Error('请在已安装的 IdeaClip 插件中使用截图功能。');
-  const response = await chrome.runtime.sendMessage({ type: 'IC_CAPTURE_START', kind, screenshotId, nextSegment });
-  if (!response?.ok) throw new Error(response?.error ?? '截图未完成，请重新点击插件后重试。');
-}
+import {requestCapture} from './request';
 
 export function CaptureButtons({ screenshotId, canContinue }: { screenshotId?: string;canContinue?:boolean }) {
   const [busy, setBusy] = useState(false);
@@ -15,7 +10,7 @@ export function CaptureButtons({ screenshotId, canContinue }: { screenshotId?: s
   async function capture(kind: 'visible' | 'region' | 'full' | 'segment',nextSegment=false) {
     setBusy(true); setError('');
     try {
-      await startCapture(kind, screenshotId,nextSegment);
+      await requestCapture(kind, {screenshotId,nextSegment});
       if (!screenshotId) window.close();
     } catch (e) { setError(e instanceof Error ? e.message : '截图失败，请重试。'); }
     finally { setBusy(false); }

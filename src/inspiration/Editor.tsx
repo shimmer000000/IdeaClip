@@ -7,6 +7,7 @@ import { assessQuality } from '../collection/quality';
 import { adoptCapture, commitDraft, reloadSavedNote } from './repository';
 import { useDraft } from './useDraft';
 import type { NoteDraft } from './model';
+import {requestCapture} from '../capture/request';
 
 function LocalImage({ id }: { id: string }) {
   const image = useLiveQuery(() => db.screenshots.get(id).catch(() => undefined), [id]);
@@ -49,7 +50,8 @@ function EditorForm({ draft }: { draft: NoteDraft }) {
   function sourceAction(kind: 'visible' | 'region' | 'full' | 'segment' | 'content') {
     void run(async () => {
       if (!globalThis.chrome?.runtime?.id) throw new Error('请在浏览器扩展中执行截图与网页采集。');
-      const response = await chrome.runtime.sendMessage({ type: kind === 'content' ? 'IC_COLLECT_START' : 'IC_CAPTURE_START', kind, draftId: draft.id });
+      if(kind!=='content'){await requestCapture(kind,{draftId:draft.id});return;}
+      const response = await chrome.runtime.sendMessage({ type: 'IC_COLLECT_START', kind, draftId: draft.id });
       if (!response?.ok) throw new Error(response?.error ?? '网页操作失败，请重新点击插件授权。');
     });
   }

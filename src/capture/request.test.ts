@@ -1,0 +1,12 @@
+import {afterEach,expect,it,vi} from 'vitest';
+import {CAPTURE_MODES,captureBackendInfo,requestCapture} from './request';
+import {version} from '../../package.json';
+afterEach(()=>{vi.unstubAllGlobals();vi.useRealTimers();});
+function runtime(info:unknown=captureBackendInfo(),manifest=version){const send=vi.fn(async(message:{type:string})=>message.type==='IC_CAPTURE_CAPABILITIES'?info:{ok:true,id:'saved'});vi.stubGlobal('chrome',{runtime:{id:'synthetic',getManifest:()=>({version:manifest}),sendMessage:send}});return send;}
+for(const mode of CAPTURE_MODES)it('当前后台协商后只截图一次 '+mode,async()=>{const send=runtime();expect(await requestCapture(mode,{draftId:'draft'})).toBe('saved');expect(send.mock.calls).toEqual([[{type:'IC_CAPTURE_CAPABILITIES'}],[{type:'IC_CAPTURE_START',kind:mode,draftId:'draft'}]]);});
+for(const info of [undefined,{protocol:1,version:'0.2.14',modes:CAPTURE_MODES},{protocol:2,version,modes:CAPTURE_MODES},{protocol:1,version,modes:['visible']}])it('未知、旧版或缺少能力不发截图且不重试 '+JSON.stringify(info),async()=>{const send=runtime(null);send.mockResolvedValue(info);await expect(requestCapture('segment')).rejects.toThrow('不要卸载');expect(send).toHaveBeenCalledTimes(1);});
+it('界面与已加载manifest不一致时零消息',async()=>{const send=runtime(captureBackendInfo(),'0.2.14');await expect(requestCapture('full')).rejects.toThrow('版本不一致');expect(send).not.toHaveBeenCalled();});
+it('后台失联转换安全错误，不泄漏消息异常',async()=>{const send=runtime();send.mockRejectedValue(new Error('untrusted-private-message'));await expect(requestCapture('visible')).rejects.toThrow('截图后台未就绪');expect(send).toHaveBeenCalledTimes(1);});
+it('能力查询超时停止，不自动截图或重试',async()=>{vi.useFakeTimers();const send=runtime();send.mockImplementation(()=>new Promise(()=>{}));const result=expect(requestCapture('segment')).rejects.toThrow('截图后台未就绪');await vi.advanceTimersByTimeAsync(3000);await result;expect(send).toHaveBeenCalledTimes(1);});
+it('旧方式错误给出重新加载指引，不自动重启插件',async()=>{const send=runtime();send.mockResolvedValueOnce(captureBackendInfo()).mockResolvedValueOnce({ok:false,error:'无效的截图方式。'} as never);await expect(requestCapture('segment')).rejects.toThrow('重新加载');expect(send).toHaveBeenCalledTimes(2);});
+it('正常截图失败保留原有说明，不重试',async()=>{const send=runtime();send.mockResolvedValueOnce(captureBackendInfo()).mockResolvedValueOnce({ok:false,error:'原网页已关闭'} as never);await expect(requestCapture('region')).rejects.toThrow('原网页已关闭');expect(send).toHaveBeenCalledTimes(2);});

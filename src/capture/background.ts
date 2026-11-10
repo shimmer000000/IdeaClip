@@ -5,6 +5,7 @@ import { installSelector } from './selector';
 import {longPage} from './long-page';
 import {stitchLongPage} from './long';
 import {validateCaptureRange,type CaptureRange} from './range';
+import {captureBackendInfo} from './request';
 import '../collection/background';
 import '../inspiration/background';
 import '../automation/background';
@@ -122,6 +123,7 @@ async function handle(message: Record<string, unknown>, sender: chrome.runtime.M
 }
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if(sender.id===chrome.runtime.id&&sender.url?.startsWith(chrome.runtime.getURL(''))&&message?.type==='IC_CAPTURE_CAPABILITIES'){respond(captureBackendInfo());return;}
   if (sender.id !== chrome.runtime.id || !message || !['IC_CAPTURE_START', 'IC_CAPTURE_REGION'].includes(message.type)) return;
   void handle(message, sender).then(id => respond({ ok: true, id })).catch(e => respond({ ok: false, error: errorText(e) }));
   return true;
