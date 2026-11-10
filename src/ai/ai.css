@@ -11,7 +11,6 @@
 }
 .analysis-main .notice p { margin: 8px 0; }
 .analysis-main .badge { font-size: 15px; line-height: 1.6; display: inline-block; }
-.ai-report { counter-reset: report-section; }
 .ai-report > h2 { font-size: 24px; margin-bottom: 18px; }
 .ai-report > p:not(.notice) {
  font-size: 18px;
@@ -21,26 +20,25 @@
 }
 .ai-report > .notice { margin: 20px 0 8px; }
 .ai-report > section {
- counter-increment: report-section;
- padding: 26px 0 10px;
+ padding: 12px 0;
  border-top: 1px solid #e1e6db;
- margin-top: 24px;
+ margin-top: 12px;
 }
-.ai-report > section > h3 {
- display: flex;
- align-items: baseline;
- gap: 12px;
- font-size: 21px;
- line-height: 1.6;
- margin: 0 0 18px;
+ .ai-report > section > h3 { margin: 0; font-size: 21px; line-height: 1.6; }
+.ai-report-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 22px 0 16px; }
+.analysis-main .ai-section-toggle {
+ display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: start;
+ gap: 14px; width: 100%; padding: 16px 14px; border: 1px solid transparent;
+ border-radius: 10px; background: #f6f8f2; color: inherit; text-align: left;
+ font: inherit; font-size: 21px; line-height: 1.6; cursor: pointer;
 }
-.ai-report > section > h3::before {
- content: counter(report-section, decimal-leading-zero);
- color: #315b43;
- font-size: 17px;
- font-weight: 600;
- flex: 0 0 auto;
-}
+.ai-section-toggle:hover { background: #edf3e7; border-color: #c5d0be; }
+.ai-section-toggle:focus-visible, .ai-report-controls button:focus-visible { outline: 3px solid #315b43; outline-offset: 3px; }
+.ai-section-number { font-size: 17px; color: #315b43; font-weight: 600; padding-top: 3px; }
+.ai-section-title { overflow-wrap: anywhere; }
+.ai-section-count { font-size: 15px; color: #4b6050; white-space: nowrap; padding-top: 5px; }
+.ai-section-arrow { font-size: 20px; color: #315b43; }
+.ai-section-content[hidden] { display: none; }
 .ai-report .ai-claim { padding: 18px 22px; margin: 16px 0; border-radius: 10px; }
 .ai-report .ai-claim > p { font-size: 18px; line-height: 1.9; margin: 14px 0 0; }
 .ai-report .ai-claim blockquote {
@@ -56,7 +54,10 @@
 }
 @media(max-width:650px) {
  .analysis-main > .panel { padding: 18px; }
- .ai-report > section { padding-top: 22px; }
+ .ai-report > section { padding-top: 10px; }
+ .analysis-main .ai-section-toggle { font-size: 19px; padding: 14px 10px; gap: 8px; }
+ .ai-section-number { font-size: 16px; }
+ .ai-section-count { font-size: 14px; }
  .ai-report .ai-claim { padding: 16px; }
  .ai-report .ai-claim blockquote { padding: 12px; }
 }

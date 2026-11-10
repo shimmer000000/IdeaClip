@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "IdeaClip",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "收藏浏览器灵感，在本地整理笔记，为商业模式分析与项目孵化做准备。",
   "permissions": ["activeTab", "scripting", "storage"],
   "optional_host_permissions": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
