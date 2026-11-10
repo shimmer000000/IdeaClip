@@ -26,7 +26,7 @@ export async function longPage(action:'start'|'frame'|'check'|'end',id:string,y=
   scope.__icLong={id,end,style,hidden};window.addEventListener('keydown',key,true);window.addEventListener('wheel',cancel,true);window.addEventListener('pointerdown',cancel,true);window.addEventListener('pagehide',cancel);document.addEventListener('visibilitychange',visibility);timer=setTimeout(end,90000);
  }
  if(scope.__icLong?.id!==id)throw new Error('长截图已取消；未保存不完整图片。');
- if(action==='frame'||action==='start'){
+ if(action==='frame'){
   scrollTo({left:0,top:y,behavior:'instant'});
   await new Promise(resolve=>setTimeout(resolve,180));
   await Promise.race([new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))),new Promise<never>((_,reject)=>setTimeout(()=>reject(new Error('网页未及时渲染，长截图已停止。')),1500))]);

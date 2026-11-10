@@ -4,6 +4,7 @@ import { compressCapture } from './image';
 import { installSelector } from './selector';
 import {longPage} from './long-page';
 import {stitchLongPage} from './long';
+import {validateCaptureRange,type CaptureRange} from './range';
 import '../collection/background';
 import '../inspiration/background';
 import '../automation/background';
@@ -70,12 +71,12 @@ async function capture(tab: chrome.tabs.Tab & { id: number; url: string }, previ
   } finally { chrome.tabs.onActivated.removeListener(switched); }
 }
 
-async function captureLong(tab:chrome.tabs.Tab&{id:number;url:string},previewTabId:number|null,draftId:string|null){
+async function captureLong(tab:chrome.tabs.Tab&{id:number;url:string},previewTabId:number|null,draftId:string|null,segmented=false,previous?:CaptureRange){
  let changed=false;const switched=()=>{changed=true;};chrome.tabs.onActivated.addListener(switched);
  const assertActive=async()=>{const current=await activeTab();if(changed||current.id!==tab.id||current.url!==tab.url)throw new Error('长截图期间切换了页面，已停止；请在原网页重新截图。');};
  try{
-  const image=await stitchLongPage(async(action,id,y)=>{const [result]=await chrome.scripting.executeScript({target:{tabId:tab.id},func:longPage,args:[action,id,y??0]});if(!result?.result)throw new Error('长截图控制已中断，请回到网页重新授权。');return result.result;},async()=>{const wait=600-(Date.now()-lastCaptureAt);if(wait>0)await new Promise(resolve=>setTimeout(resolve,wait));await assertActive();lastCaptureAt=Date.now();return chrome.tabs.captureVisibleTab(tab.windowId,{format:'png'});},assertActive);
-  const screenshot:Screenshot={id:crypto.randomUUID(),...image,kind:'full',sourceTabId:tab.id,sourceUrl:tab.url,sourceTitle:tab.title??'',createdAt:Date.now()};
+  const image=await stitchLongPage(async(action,id,y)=>{const [result]=await chrome.scripting.executeScript({target:{tabId:tab.id},func:longPage,args:[action,id,y??0]});if(!result?.result)throw new Error('长截图控制已中断，请回到网页重新授权。');return result.result;},async()=>{const wait=600-(Date.now()-lastCaptureAt);if(wait>0)await new Promise(resolve=>setTimeout(resolve,wait));await assertActive();lastCaptureAt=Date.now();return chrome.tabs.captureVisibleTab(tab.windowId,{format:'png'});},assertActive,segmented,previous);
+  const screenshot:Screenshot={id:crypto.randomUUID(),...image,kind:segmented?'segment':'full',sourceTabId:tab.id,sourceUrl:tab.url,sourceTitle:tab.title??'',createdAt:Date.now()};
   if(draftId)await storeDraftScreenshot(draftId,screenshot);else await saveScreenshot(screenshot);
   try{await showPreview(screenshot.id,previewTabId,draftId);}catch{throw new Error('长图已保存，请点击插件中的“最近截图”查看。');}return screenshot.id;
  }finally{chrome.tabs.onActivated.removeListener(switched);}
@@ -94,13 +95,16 @@ async function handle(message: Record<string, unknown>, sender: chrome.runtime.M
     }
     const draftId = typeof message.draftId === 'string' ? message.draftId : null;
     if (!sender.url?.startsWith(chrome.runtime.getURL('')) || sender.tab && !sender.url.startsWith(chrome.runtime.getURL('capture.html')) && !(draftId && sender.url.startsWith(chrome.runtime.getURL('note.html')))) throw new Error('无效的截图请求。');
-    if (message.kind !== 'visible' && message.kind !== 'region' && message.kind !== 'full') throw new Error('无效的截图方式。');
+    if (message.kind !== 'visible' && message.kind !== 'region' && message.kind !== 'full' && message.kind !== 'segment') throw new Error('无效的截图方式。');
+    let previousRange:CaptureRange|undefined;
+    if(message.nextSegment&&(message.kind!=='segment'||typeof message.screenshotId!=='string'||draftId))throw new Error('缺少可继续的分段截图。');
     let previewTabId: number | null = null;
     if (draftId) {
       await activateDraftSource(draftId); previewTabId = sender.tab?.id ?? null;
     } else if (typeof message.screenshotId === 'string') {
       const previous = await db.screenshots.get(message.screenshotId);
       if (!previous) throw new Error('找不到原截图，请从网页重新打开插件。');
+      if(message.nextSegment){if(previous.kind!=='segment')throw new Error('此图片不是分段长图。');previousRange=validateCaptureRange(previous.captureRange);if(previousRange.endY>=previousRange.pageHeight)throw new Error('已截到页面底部，无需继续。');}
       const source = await chrome.tabs.get(previous.sourceTabId).catch(() => { throw new Error('原网页已关闭，请在目标网页重新打开插件。'); });
       if (source.url !== previous.sourceUrl) throw new Error('原网页已关闭或跳转，请在目标网页重新打开插件。');
       await chrome.windows.update(source.windowId, { focused: true });
@@ -108,7 +112,7 @@ async function handle(message: Record<string, unknown>, sender: chrome.runtime.M
       previewTabId = sender.tab?.id ?? null;
     }
     const tab = await activeTab();
-    if(message.kind==='full')return await captureLong(tab,previewTabId,draftId);
+    if(message.kind==='full'||message.kind==='segment')return await captureLong(tab,previewTabId,draftId,message.kind==='segment',previousRange);
     if (message.kind === 'region') {
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: installSelector, args: [previewTabId, draftId] });
       return null;

@@ -31,7 +31,8 @@ export interface Project extends Partial<ProjectDetails> { id: string; title: st
 export interface Screenshot {
   id: string;
   blob: Blob;
-  kind: 'visible' | 'region' | 'full';
+  kind: 'visible' | 'region' | 'full' | 'segment';
+  captureRange?:import('./capture/range').CaptureRange;
   width: number;
   height: number;
   originalBytes: number;

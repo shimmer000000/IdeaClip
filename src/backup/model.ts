@@ -1,4 +1,5 @@
 import {packageHistories} from '../incubation/task-package-model';
+import {validateCaptureRange} from '../capture/range';
 import {evidenceEntries} from '../incubation/local-evidence-model';
 import {deliverySnapshot} from '../incubation/delivery';
 import {remoteSnapshot} from '../incubation/github-sync';
@@ -103,7 +104,7 @@ export function portableRow(table: BackupTable, value: unknown): Row {
       if (!text(r.entryKey, 10000).trim()) throw new Error('草稿入口无效。');
       return { id: key, entryKey: txt(r.entryKey), input: { ...fields(input), tagsText: txt(input.tagsText) }, baseRevision: r.baseRevision == null ? null : number(r.baseRevision), sourceTabId: null, sourcePageUrl: url(r.sourcePageUrl ?? ''), pendingCaptureId: r.pendingCaptureId == null ? null : id(r.pendingCaptureId), hasChanges: bool(r.hasChanges), ...dates() };
     }
-    case 'screenshots': return { id: key, kind: enumeration(r.kind, ['visible', 'region', 'full']), width: number(r.width), height: number(r.height), originalBytes: number(r.originalBytes), sourceTabId: 0, sourceUrl: url(r.sourceUrl), sourceTitle: txt(r.sourceTitle), createdAt: number(r.createdAt) };
+    case 'screenshots': return { id: key, kind: enumeration(r.kind, ['visible', 'region', 'full', 'segment']), ...(r.kind==='segment'?{captureRange:validateCaptureRange(r.captureRange)}:{}), width: number(r.width), height: number(r.height), originalBytes: number(r.originalBytes), sourceTabId: 0, sourceUrl: url(r.sourceUrl), sourceTitle: txt(r.sourceTitle), createdAt: number(r.createdAt) };
     case 'contentCaptures': { const capture = { id: key, originalUrl: url(r.originalUrl ?? r.sourceUrl), sourceUrl: url(r.sourceUrl), platform: enumeration(r.platform, ['x', 'github', 'wechat', 'article', 'web']), siteName: txt(r.siteName), title: txt(r.title), author: nullable(r.author), publishedAt: nullable(r.publishedAt), text: txt(r.text), images: array(r.images).map(value => { const image = object(value); return { url: url(image.url), description: txt(image.description), kind: enumeration(image.kind, ['image', 'video-cover']) }; }), links: array(r.links).map(value => { const link = object(value); return { url: url(link.url), text: txt(link.text) }; }), githubLinks: array(r.githubLinks).map(value => url(value)), collectedAt: number(r.collectedAt), status: enumeration(r.status, ['readable', 'partial', 'unavailable']), warnings: texts(r.warnings), sourceTabId: null, screenshotIds: ids(r.screenshotIds), noteId: r.noteId == null ? null : id(r.noteId), updatedAt: number(r.updatedAt), textOrigin: enumeration(r.textOrigin, ['extracted', 'manual', 'edited', 'empty']) }; return { ...capture, ...captureMetadata(r, capture.text, capture.sourceUrl) }; }
     case 'settings': if (key !== 'general') throw new Error('未知设置项，拒绝导出或恢复。'); return { id: 'general', aiEnabled: bool(r.aiEnabled) };
     case 'analyses': {

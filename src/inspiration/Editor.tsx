@@ -46,7 +46,7 @@ function EditorForm({ draft }: { draft: NoteDraft }) {
       form.setStatus(saveState === 'saved' ? '已保存灵感，全部内容已关联到同一条笔记' : '已保存草稿，可稍后继续编辑');
     });
   }
-  function sourceAction(kind: 'visible' | 'region' | 'full' | 'content') {
+  function sourceAction(kind: 'visible' | 'region' | 'full' | 'segment' | 'content') {
     void run(async () => {
       if (!globalThis.chrome?.runtime?.id) throw new Error('请在浏览器扩展中执行截图与网页采集。');
       const response = await chrome.runtime.sendMessage({ type: kind === 'content' ? 'IC_COLLECT_START' : 'IC_CAPTURE_START', kind, draftId: draft.id });
@@ -74,8 +74,8 @@ function EditorForm({ draft }: { draft: NoteDraft }) {
   return <>
     <div className="note-save-status" aria-live="polite"><span role="status">{form.status}</span><span>{note?.saveState === 'saved' ? '已保存笔记' : note ? '已存为草稿' : '尚未提交为笔记'}{draft.hasChanges ? ' · 有未提交编辑' : ''}</span></div>
     {(error || form.error) && <div role="alert" className="error panel">{error || form.error}{form.error && <button type="button" onClick={() => { void run(async () => {}); }}>重试保留草稿</button>}{note && <button type="button" onClick={() => { void reloadSaved(); }}>重新读取已保存版本</button>}</div>}
-    <section className="panel note-section"><h2>网页截图</h2><div className="actions"><button disabled={busy} onClick={() => sourceAction('visible')}>截取可见页面</button><button disabled={busy} onClick={() => sourceAction('region')}>选择区域截图</button><button disabled={busy} onClick={() => sourceAction('full')}>截取长图</button></div>
-      <p className="muted">可添加多张截图。移除只解除这条笔记的关联，保留原图。长图会自动滚动原网页，Esc/滚轮/点击可取消；请等待加载完成，固定和悬浮元素不会收入长图。</p>
+    <section className="panel note-section"><h2>网页截图</h2><div className="actions"><button disabled={busy} onClick={() => sourceAction('visible')}>截取可见页面</button><button disabled={busy} onClick={() => sourceAction('region')}>选择区域截图</button><button disabled={busy} onClick={() => sourceAction('full')}>截取长图</button><button disabled={busy} onClick={() => sourceAction('segment')}>分段截长图</button></div>
+      <p className="muted">可添加多张截图。移除只解除这条笔记的关联，保留原图。超长网页可用“分段截长图”从当前位置截取一段。长图会自动滚动原网页，Esc/滚轮/点击可取消；请等待加载完成，固定和悬浮元素不会收入长图。</p>
       <div className="note-images">{input.screenshotIds.map((id, index) => <figure key={id}><LocalImage id={id} /><figcaption>截图 {index + 1}<button type="button" onClick={() => change('screenshotIds', input.screenshotIds.filter(imageId => imageId !== id))}>移除截图 {index + 1}</button></figcaption></figure>)}</div>
       <details><summary>选择已有截图（{screenshots?.rows.length ?? 0} 张）</summary>{screenshots?.failed && <p className="error">截图列表读取失败，编辑内容仍保留，请稍后重试。</p>}<div className="image-options">{screenshots?.rows.map((image, index) => <label key={image.id}><input type="checkbox" checked={input.screenshotIds.includes(image.id)} onChange={e => change('screenshotIds', e.target.checked ? [...input.screenshotIds, image.id] : input.screenshotIds.filter(id => id !== image.id))} />选择截图 {index + 1} · {image.title || '网页截图'} · {new Date(image.time).toLocaleString('zh-CN')}</label>)}</div></details>
     </section>
