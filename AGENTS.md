@@ -1,5 +1,8 @@
 # IdeaClip 开发约定
 
+- 0.2.20个人Codex模式为独立builtin-personal十栏，不改变原六模板。免费规则是假设，README关键词不能证明可复用/两天完成/Windows适配/市场需求；复杂依赖须缩到静态或人工样品，未知成本不能当0。七类人工成本在新notes/analyses事务快照中保存，不重写原笔记/报告、预算/队列；下一次生成不继承旧成本为本次实测。评分六权重25/20/20/15/10/10，说明来源或缺口及覆盖；不得把粗略信号覆盖当成功率，不输出含未知的精确总分。许可证只读快照README之前元数据，避免正文伪造许可；全部权利仍待核查，敏感数据单独提示。MVP草案须编辑审核，任一输入修改清确认；事务复查来源并防重复，复用createProject/validateProject与open链接，未绑定workspace不授予开发权限。只提取方案，不执行/新建仓库/发布；Mock与原Chrome只读UI证据分开。
+
+
 - 0.2.19外观仅localStorage ideaclip-appearance白名单system/light/dark；缺失、损坏或读取失败回退system，保存失败明确报错。data-theme及color-scheme统一全页；系统变化仅system响应，storage事件同步其他扩展页。启动模块在页面绘制前尽早应用主题；不把偏好写入Dexie/ZIP/预算/AI配置，不反色原截图，不修改网页采集或后台。新增颜色使用现有主题变量及浅色回退，弹窗不因切换器横向溢出。
 
 

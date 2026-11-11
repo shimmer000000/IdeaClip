@@ -1,3 +1,4 @@
+import { PERSONAL_SKILL, PERSONAL_ID } from '../github/personal-skill';
 import { GITHUB_SKILL, GITHUB_ID } from '../github/skill';
 import { SECTIONS, SYSTEM_PROMPT, type Claim } from '../ai/report';
 import claimSchema from '../ai/generated/schema.json' with { type: 'json' };
@@ -29,6 +30,7 @@ export const BUILTINS: readonly Skill[] = [
     ['baseline', '起点与关键假设', '说明资源和未知前提。'], ['sevenDays', '7 天：需求验证', '访谈、原型、验证指标和停止条件。'], ['thirtyDays', '30 天：试点交付', '试点用户、交付物、成本边界和成功指标。'], ['ninetyDays', '90 天：复盘与扩展', '依据试点证据决定扩展，不承诺收入。'], ['dependencies', '依赖与风险应对', '识别关键依赖和替代路径。'], ['decisionGates', '阶段决策与待验证问题', '定义继续、调整和停止的证据门槛。'],
   ]),version:'1.0.1'},
   GITHUB_SKILL,
+  PERSONAL_SKILL,
 ];
 const record = (x: unknown): Record<string, unknown> => { if (!x || typeof x !== 'object' || Array.isArray(x)) throw new Error('模板对象无效。'); return x as Record<string, unknown>; };
 const str = (x: unknown, max: number, required = true) => { if (typeof x !== 'string' || x.length > max || (required && !x.trim()) || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(x)) throw new Error('模板字段为空、过长或包含控制字符。'); return x; };
@@ -116,7 +118,7 @@ export function validateSkillReport(value:unknown,skill:Skill,source?:string):Sk
   if(!c.evidence?.trim())throw new ReportValidationError('ai_report_evidence_required',index,detailOf(c.evidence,field,'nonempty','非空原文证据',index,itemIndex));
   if(source!==undefined&&!source.includes(c.evidence))throw new ReportValidationError('ai_report_quote_mismatch',index,detailOf(c.evidence,field,'substring','连续逐字匹配，不归一化',index,itemIndex));
  }
- if(skill.id===GITHUB_ID) for(const claims of Object.values(report.sections)) for(const c of claims) {
+ if(skill.id===GITHUB_ID||skill.id===PERSONAL_ID) for(const claims of Object.values(report.sections)) for(const c of claims) {
    if(c.kind!=='hypothesis' && /(?:收入|月活|客单价|转化率|客户人数)[^。；\n]{0,16}\d/.test(c.text)) throw new Error('商业数字只能作为待验证假设，公开GitHub指标不能证明收入或转化。');
  }
  return report;
