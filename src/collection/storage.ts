@@ -1,6 +1,6 @@
 import { db } from '../storage';
 import { assessQuality, paragraphMap } from './quality';
-import { cleanText, githubProjects, httpUrl, MAX_IMAGES, MAX_LINKS, MAX_TEXT, type ContentCapture, type ExtractedPage } from './model';
+import { cleanText, githubProjects, githubTextLinks, httpUrl, MAX_IMAGES, MAX_LINKS, MAX_TEXT, type ContentCapture, type ExtractedPage } from './model';
 
 export async function storeExtraction(page: ExtractedPage, sourceTabId: number | null, database = db) {
   const record: ContentCapture = { ...page, originalUrl: page.sourceUrl, id: crypto.randomUUID(), sourceTabId, screenshotIds: [], noteId: null, updatedAt: Date.now(), textOrigin: page.text ? 'extracted' : 'empty' };
@@ -28,7 +28,7 @@ export async function saveCaptureEdits(id: string, edits: CaptureEdits, database
         title: cleanText(edits.title), sourceUrl, author: cleanText(edits.author ?? '').slice(0, 1000) || null, publishedAt: cleanText(edits.publishedAt ?? '').slice(0, 1000) || null,
         text: edits.text, links: edits.links.map(link => ({ url: httpUrl(link.url)!, text: cleanText(link.text).slice(0, 500) })),
         images: edits.images.map(image => ({ url: httpUrl(image.url)!, description: cleanText(image.description).slice(0, 2000), kind: image.kind === 'video-cover' ? 'video-cover' : 'image' })),
-        screenshotIds, githubLinks: githubProjects([...edits.links.map(link => link.url), ...(edits.text.match(/https?:\/\/github\.com\/[\w.-]+\/[\w.-]+/g) ?? []), ...(previous.platform === 'github' ? [sourceUrl] : [])]),
+        screenshotIds, githubLinks: githubProjects([...edits.links.map(link => link.url), ...githubTextLinks(edits.text), ...(previous.platform === 'github' ? [sourceUrl] : [])]),
         updatedAt: Date.now(), textOrigin: !edits.text ? 'empty' : edits.text === previous.text || previous.textOrigin === 'manual' ? previous.textOrigin : previous.text ? 'edited' : 'manual',
         ...(changed ? { quality: assessQuality({ text: edits.text, url: sourceUrl, platform: previous.platform }), provenance: paragraphMap(edits.text, sourceUrl, 'edited') } : {}),
       });
@@ -37,4 +37,15 @@ export async function saveCaptureEdits(id: string, edits: CaptureEdits, database
     if (e instanceof Error && /不存在/.test(e.message)) throw e;
     throw new Error('修改保存失败，可能是空间不足或数据库不可用。输入仍保留在页面中，请重试。');
   }
+}
+
+/** Append to current capture without resaving stale editor fields or the original X URL. */
+export async function appendGitHubRepository(id:string,input:string,database=db){
+ const repository=githubProjects([input])[0];if(!repository)throw Error('请补充完整GitHub仓库地址。');
+ await database.transaction('rw',database.contentCaptures,async()=>{
+  const current=await database.contentCaptures.get(id);if(!current)throw Error('采集记录不存在。');
+  const links=current.links.some(l=>l.url===repository)?current.links:[...current.links,{url:repository,text:'用户手动补充完整仓库'}];
+  if(links.length>MAX_LINKS)throw Error('链接数量超过上限，请先整理采集记录。');
+  await database.contentCaptures.update(id,{links,githubLinks:githubProjects([...current.githubLinks,repository]),updatedAt:Date.now()});
+ });
 }

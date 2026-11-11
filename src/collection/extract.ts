@@ -1,6 +1,6 @@
 import { Readability } from '@mozilla/readability';
 import { assessQuality, paragraphMap, type TextQuality } from './quality';
-import { cleanText, emptyPage, githubProjects, httpUrl, MAX_IMAGES, MAX_LINKS, MAX_TEXT, sourcePlatform, type ExtractedPage, type PageImage, type PageLink } from './model';
+import { cleanText, emptyPage, githubProjects, githubTextLinks, httpUrl, MAX_IMAGES, MAX_LINKS, MAX_TEXT, sourcePlatform, type ExtractedPage, type PageImage, type PageLink } from './model';
 
 const noise = 'script,style,noscript,template,nav,aside,footer,form,button,[role="navigation"],[role="complementary"],[hidden],[aria-hidden="true"],#comments,.comments,.comment-list,.related,.recommendations,.advertisement,[data-testid*="recommend"],#ideaclip-region-selector';
 const xRichText = '[data-testid="twitterArticleRichTextView"],[data-testid="longformRichTextComponent"]';
@@ -50,7 +50,9 @@ function metadata(doc: Document, ...names: string[]) {
 function safeLinks(root: Element, sourceUrl: string): PageLink[] {
   const links = new Map<string, PageLink>();
   for (const node of root.querySelectorAll('a[href]')) {
-    const url = httpUrl(node.getAttribute('data-expanded-url') || node.getAttribute('href'), sourceUrl);
+    const candidates = [node.getAttribute('data-expanded-url'), node.getAttribute('href'), node.getAttribute('title'), node.textContent];
+    const full = candidates.flatMap(v => v ? githubProjects([v]) : [])[0];
+    const url = full || httpUrl(node.getAttribute('href'), sourceUrl);
     if (!url || url.split('#')[0] === sourceUrl.split('#')[0]) continue;
     if (!links.has(url)) links.set(url, { url, text: cleanText(node.textContent ?? '').slice(0, 500) });
   }
@@ -168,7 +170,8 @@ export function extractFromDocument(doc: Document, originalUrl: string): Extract
   if (root && page.platform !== 'x') page.images = safeImages(root, page.sourceUrl);
   if (linkRoot) page.links.push(...safeLinks(linkRoot, page.sourceUrl));
   page.links = [...new Map(page.links.map(link => [link.url, link])).values()];
-  page.githubLinks = githubProjects([...page.githubLinks, ...page.links.map(link => link.url), ...(page.text.match(/https?:\/\/github\.com\/[\w.-]+\/[\w.-]+/g) ?? [])]);
+  page.githubLinks = githubProjects([...page.githubLinks, ...page.links.map(link => link.url), ...githubTextLinks(page.text)]);
+  if (page.links.some(l => /^https:\/\/t\.co\//.test(l.url)) || /github\.com\/[^\s]*[.…]/.test(page.text)) page.warnings.push('存在短链接或截断的 GitHub 地址，待核实；可手动补充完整仓库地址，不猜测仓库名称。');
   if (page.text.length > MAX_TEXT) {
     page.text = page.text.slice(0, MAX_TEXT).replace(/[\uD800-\uDBFF]$/, ''); page.status = 'partial';
     page.warnings.push(`正文超过 ${MAX_TEXT} 字符，已截断，请手动核对。`);

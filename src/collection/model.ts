@@ -51,17 +51,26 @@ export function sourcePlatform(sourceUrl: string): Platform {
   } catch { /* Unknown source is deliberately not inferred. */ }
   return 'web';
 }
+/** Accept complete repository identities only; never resolve or guess shortened links. */
 export function githubProjects(urls: string[]): string[] {
   const results = new Set<string>();
-  for (const value of urls) {
-    const valid = httpUrl(value); if (!valid) continue;
-    const url = new URL(valid);
-    const parts = url.pathname.split('/').filter(Boolean);
-    if (url.hostname !== 'github.com' || parts.length < 2 || /^(features|topics|collections|marketplace|settings|login|signup|orgs|users|search|sponsors|enterprise|about|pricing)$/.test(parts[0])) continue;
-    if (!/^[a-z\d-]+$/i.test(parts[0]) || !/^[\w.-]+$/.test(parts[1])) continue;
-    results.add(`https://github.com/${parts[0]}/${parts[1].replace(/\.git$/, '')}`);
+  for (let value of urls) {
+    value = value.trim();
+    if (/^github\.com\//i.test(value)) value = 'https://' + value;
+    if (!/^https:\/\//i.test(value) || /[…\s\\%]|\.{2}/.test(value)) continue;
+    try {
+      const u = new URL(value), parts = u.pathname.split('/').filter(Boolean);
+      if (u.hostname !== 'github.com' || u.port || u.username || u.password || parts.length < 2) continue;
+      const [owner, raw] = parts, repo = raw.replace(/\.git$/, '');
+      if (/^(features|topics|collections|marketplace|settings|login|signup|orgs|users|search|sponsors|enterprise|about|pricing|explore|notifications|new)$/i.test(owner)) continue;
+      if (!/^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(owner) || !/^[\w.-]{1,100}$/.test(repo) || /^\.+$/.test(repo) || repo.endsWith('.')) continue;
+      results.add(`https://github.com/${owner}/${repo}`);
+    } catch { /* Invalid and shortened addresses are not identities. */ }
   }
   return [...results].slice(0, MAX_LINKS);
+}
+export function githubTextLinks(text: string): string[] {
+  return githubProjects(text.match(/(?<![\w./@:-])(?:https:\/\/)?github\.com\/[^\s<>"'，。；！？）)\]]+/gi) ?? []);
 }
 export function emptyPage(url: string, title: string, warning: string): ExtractedPage {
   const safe = httpUrl(url) ?? '';

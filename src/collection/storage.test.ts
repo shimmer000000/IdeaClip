@@ -2,7 +2,7 @@ import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IdeaClipDB, type Screenshot } from '../storage';
 import { emptyPage } from './model';
-import { saveCaptureEdits, storeExtraction } from './storage';
+import { appendGitHubRepository, saveCaptureEdits, storeExtraction } from './storage';
 
 let database: IdeaClipDB;
 beforeEach(() => { database = new IdeaClipDB(`collection-${crypto.randomUUID()}`); });
@@ -41,4 +41,11 @@ describe('采集草稿与截图关联', () => {
     vi.spyOn(database.contentCaptures, 'add').mockRejectedValue(new DOMException('full', 'QuotaExceededError'));
     await expect(storeExtraction(emptyPage('https://example.com', '', ''), 1, database)).rejects.toThrow('保存失败');
   });
+});
+
+it('手动补完整仓库保留X原URL和当前正文，无网络、无AI',async()=>{
+ const p=emptyPage('https://x.com/test/status/123','主帖','短链待核实');const id=await storeExtraction(p,null,database);
+ await database.contentCaptures.update(id,{text:'其他窗口刚编辑的正文',noteId:'original-note'});
+ await appendGitHubRepository(id,'github.com/owner/repository',database);await appendGitHubRepository(id,'github.com/owner/repository',database);
+ const r=await database.contentCaptures.get(id);expect(r?.githubLinks).toEqual(['https://github.com/owner/repository']);expect(r?.links).toHaveLength(1);expect(r?.text).toBe('其他窗口刚编辑的正文');expect(r?.originalUrl).toBe(p.sourceUrl);expect(r?.sourceUrl).toBe(p.sourceUrl);expect(r?.noteId).toBe('original-note');expect(await database.aiUsage.count()).toBe(0);
 });

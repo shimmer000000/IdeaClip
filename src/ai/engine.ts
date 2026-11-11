@@ -1,3 +1,4 @@
+import { sourceAppendix } from '../github/public';
 import {noteEvidenceCatalog,resolveNoteEvidence,NOTE_EVIDENCE_PROMPT,type NoteEvidenceRef} from './note-evidence';
 import { evidenceCatalog, resolveEvidence, type EvidenceRef } from '../research/online/evidence-catalog';
 import { assertReview, snapshotHash } from '../research/workflow/repository';
@@ -178,7 +179,8 @@ export class AIEngine {
           const research={...(preview.workflowId?{workflowId:preview.workflowId}:{}),id:preview.id,studyId:preview.researchId,createdAt:this.dependencies.now(),model:preview.config.model,planRevision:preview.revision,report,sources:preview.researchSources,content:researchReportMarkdown(report,preview.researchSources,preview.config.model,this.dependencies.now())};
           const analysis:Analysis={id:preview.id,noteId:preview.researchId,createdAt:research.createdAt,content:research.content,research};
           await this.database.aiUsage.update(preview.id,{status:'succeeded',...receivedUsage}).catch(()=>{});
-          phase='storage';const saved=await this.save(analysis).then(()=>true).catch(()=>false);
+          if(preview.template.id==='builtin-github')analysis.content+=sourceAppendix(preview.content);
+        phase='storage';const saved=await this.save(analysis).then(()=>true).catch(()=>false);
           if(!saved)await this.database.aiUsage.update(preview.id,{reportSaved:false,errorCode:'research_save',errorStage:'storage'}).catch(()=>{});return {analysis,saved};
         }
         if (preview.sources && !preview.projectId) {
@@ -196,6 +198,7 @@ export class AIEngine {
         phase='format';const createdAt=this.dependencies.now();let analysis:Analysis;try{analysis={id:preview.id,noteId:preview.noteId,createdAt,projectId:preview.projectId,...(preview.projectId?{sources:preview.sources}:{}),sourceUrl:preview.url,template:preview.template,...(preview.template.id===BUSINESS_ID?{content:markdown(validateReport(report),preview.config.model,createdAt),report:validateReport(report)}:{content:skillMarkdown(report,preview.template,preview.config.model,createdAt),skillReport:report}),model:preview.config.model,provider:preview.config.provider,endpointOrigin:new URL(preview.config.endpoint).origin,inputDigest:preview.inputDigest,inputRevision:preview.revision,imageCount:preview.imageIds.length};checks.inMemoryReport=true;}catch{throw new ReportValidationError('ai_report_format');}
         // A usage-log write failure must not discard a paid-for report. Its reservation remains.
         await this.database.aiUsage.update(preview.id, { status: 'succeeded', inputTokens: completion.inputTokens, outputTokens: completion.outputTokens }).catch(() => {});
+        if(preview.template.id==='builtin-github')analysis.content+=sourceAppendix(preview.content);
         phase='storage';const saved=await this.save(analysis).then(()=>true).catch(()=>false);checks.reportSaved=saved;
         if(!saved){await this.database.aiUsage.update(preview.id,{reportSaved:false,errorStage:'storage',errorCode:'ai_report_save'}).catch(()=>{});return {analysis,saved,diagnostic:await recordDiagnostic({code:'ai_report_save'})};}return {analysis,saved};
       }, controller.signal);

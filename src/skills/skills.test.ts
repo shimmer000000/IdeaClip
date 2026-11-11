@@ -32,7 +32,7 @@ describe('受限模板定义与五种结构', () => {
     const other = BUILTINS.find(s => s.id !== skill.id)!; expect(() => validateSkillReport(reportFor(other), skill)).toThrow();
   });
   it('五份 Schema 不同，Codex 报告能生成完整中文开发指令与纯文本 Markdown', () => {
-    expect(new Set(BUILTINS.map(s => JSON.stringify(outputSchema(s)))).size).toBe(5);
+    expect(new Set(BUILTINS.map(s => JSON.stringify(outputSchema(s)))).size).toBe(6);
     const skill = BUILTINS[3]; const report = validateSkillReport(reportFor(skill), skill);
     expect(codexInstructions(report, skill)).toContain('完整中文开发指令'); expect(codexInstructions(report, skill)).toContain('测试与交付验收');
     report.sections.requirements[0].text = '<script>alert(1)</script>'; expect(skillMarkdown(report, skill, 'mock', 1)).not.toContain('<script>');
@@ -59,7 +59,7 @@ describe('受限模板定义与五种结构', () => {
 });
 describe('模板本地操作和授权', () => {
   it('新建、编辑、复制、删除与内置保护；版本单调失效并防并发覆盖', async () => {
-    expect(await listSkills(db)).toHaveLength(5); const created = await saveSkill(custom(), db); const edited = await saveSkill({ ...created, name: '新名称' }, db, created.version); expect(edited.version).not.toBe(created.version);
+    expect(await listSkills(db)).toHaveLength(6); const created = await saveSkill(custom(), db); const edited = await saveSkill({ ...created, name: '新名称' }, db, created.version); expect(edited.version).not.toBe(created.version);
     await expect(saveSkill({ ...created, name: '旧窗口' }, db, created.version)).rejects.toThrow('其他窗口');
     const copy = await copySkill(edited, db); expect(copy.id).not.toBe(edited.id); await deleteSkill(copy.id, db); await expect(getSkill(copy.id, db)).rejects.toThrow('不存在');
     await expect(saveSkill(BUILTINS[0], db)).rejects.toThrow('内置'); await expect(deleteSkill(BUSINESS_ID, db)).rejects.toThrow('自定义');
