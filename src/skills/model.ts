@@ -118,9 +118,13 @@ export function validateSkillReport(value:unknown,skill:Skill,source?:string):Sk
   if(!c.evidence?.trim())throw new ReportValidationError('ai_report_evidence_required',index,detailOf(c.evidence,field,'nonempty','非空原文证据',index,itemIndex));
   if(source!==undefined&&!source.includes(c.evidence))throw new ReportValidationError('ai_report_quote_mismatch',index,detailOf(c.evidence,field,'substring','连续逐字匹配，不归一化',index,itemIndex));
  }
- if(skill.id===GITHUB_ID||skill.id===PERSONAL_ID) for(const claims of Object.values(report.sections)) for(const c of claims) {
-   if(c.kind!=='hypothesis' && /(?:收入|月活|客单价|转化率|客户人数)[^。；\n]{0,16}\d/.test(c.text)) throw new Error('商业数字只能作为待验证假设，公开GitHub指标不能证明收入或转化。');
+ if(skill.id===GITHUB_ID||skill.id===PERSONAL_ID) for(const [index,section] of skill.sections.entries()) for(const [itemIndex,c] of report.sections[section.key].entries()) {
+   // Match a metric's direct numeric assertion, not any number in the next 16 characters.
+   // Unknown revenue followed by a seven-day plan or a Star count is not a revenue claim.
+   const assertion=/(?:收入|营收|利润|月活(?:跃用户)?|客单价|转化率|客户人数)(?:\s|[:：=≈]|达到|高达|约为|约|为|是|超过|增长至|预计|大约|至少|每月|每年|已有|有|达)*[¥￥$]?\s*\d/u;
+   if(c.kind!=='hypothesis' && assertion.test(c.text)) throw new ReportValidationError('ai_report_business_number',index,detailOf(c.kind,`sections.column-${index+1}.item-${itemIndex+1}.kind`,'enum','hypothesis（商业数字须为待验证假设）',index,itemIndex));
  }
+
  return report;
 }
 const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/[\\`*_{}\[\]()#!|]/g, '\\$&');

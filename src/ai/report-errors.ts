@@ -6,6 +6,7 @@ export const REPORT_ERRORS={
  ai_report_text:'条目文字为空、类型错误或超过3000字符。',ai_report_evidence:'证据类型错误或超过1000字符。',
  ai_report_evidence_required:'来源陈述必须提供非空原文证据。',ai_report_quote_mismatch:'原文证据不是已发送文本中的连续逐字摘录；空白、换行和Unicode差异也会被拒绝。',
  ai_report_schema:'报告未通过最终JSON Schema校验。',ai_report_validator:'本地报告校验器异常，不能判定结果有效。',
+ ai_report_business_number:'商业数字必须标为待验证假设，不能用GitHub指标推断真实收入、用户或转化。',
  ai_report_format:'报告格式化失败，尚未生成可保存报告。',
  ai_report_evidence_ref:'证据编号不属于本次预览或原文切片已变化；未自动替换或修正引用。',
  ai_report_evidence_catalog:'证据目录超过安全数量上限，请缩减资料后重新预览；未自动截断。',
@@ -27,5 +28,5 @@ export function schemaFailure(error:unknown,value:unknown){
 export class ReportValidationError extends Error {
  readonly code:ReportErrorCode;readonly sectionIndex?:number;readonly detail?:ValidationDetail;
  constructor(code:ReportErrorCode,sectionIndex?:number,detail?:ValidationDetail){super(`报告未通过 JSON Schema 或来源证据校验：[${code}] ${REPORT_ERRORS[code]}${Number.isInteger(sectionIndex)&&sectionIndex!>=0&&sectionIndex!<15?' 第'+(sectionIndex!+1)+'栏。':''} 未保存报告；费用预留保留，不自动重试。`);this.code=code;this.detail=detail;if(Number.isInteger(sectionIndex)&&sectionIndex!>=0&&sectionIndex!<15)this.sectionIndex=sectionIndex;}
- get stage():'json'|'schema'|'evidence'|'validator'|'format'{return this.code==='ai_report_json'?'json':this.code==='ai_report_validator'?'validator':this.code==='ai_report_format'?'format':this.code.startsWith('ai_report_evidence')||this.code==='ai_report_quote_mismatch'?'evidence':'schema';}
+ get stage():'json'|'schema'|'evidence'|'validator'|'format'{return this.code==='ai_report_json'?'json':this.code==='ai_report_validator'?'validator':this.code==='ai_report_format'?'format':this.code.startsWith('ai_report_evidence')||this.code==='ai_report_quote_mismatch'||this.code==='ai_report_business_number'?'evidence':'schema';}
 }
