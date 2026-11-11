@@ -1,5 +1,7 @@
 # IdeaClip 开发约定
 
+- 0.2.23个人Codex模板1.0.1新增应用自有十栏数组JSON示例与输出前自检，system中不插入用户模板/资料；指导与Schema/证据目录一并计入预览Token和费用，不提高用户配置的输出上限。每栏严格1～8条Claim，单对象、缺栏、额外包装仍拒绝，不自动包装/补齐/重试。只读映射精确旧1.0.0应用定义，保留启停/更新时间；篡改或未知版本拒绝，旧签名不能继续授权。旧报告嵌入模板、诊断和费用预留原样保留。Mock不能证明真实模型必定遵循格式，禁止使用真实付费请求验收。
+
 - 0.2.22用户已授权自动解析X短链：只请求严格https://t.co/{有限字母数字}，credentials omit/redirect manual/referrer none，最多3短链×3跳、每项3.5秒、总10秒、HTML64KiB/2000节点，60秒失败/成功缓存。只读webRequest仅自身t.co GET的Location，或parse5静态meta refresh，不执行脚本、不请求目标GitHub或任意外站、不读Cookie/Auth。仅完整固定github.com HTTPS仓库格式才追加；不代表仓库存在/公开或许可。新采集自动追加，旧采集预览自动核实；事务复查sourceUrl和完整links，变化拒绝覆盖，不改原帖/正文/截图/笔记报告；容量不足不截断旧链接。DOM保留省略号，不混评论/引用、不猜仓库。Mock默认拦截t.co后台fetch，真实短链验收必须显式live开关，与Mock分别记证。
 
 
