@@ -4,13 +4,17 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 
-export async function collectionHarness(existingProfile?: string, visible = false) {
+export async function collectionHarness(existingProfile?: string, visible = false, liveTco = false) {
   const installed = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
   const executablePath = process.env.IDEACLIP_BROWSER_PATH ?? (existsSync(installed) ? installed : chromium.executablePath());
   const profile = existingProfile ?? await mkdtemp(join(tmpdir(), 'ideaclip-collect-'));
   const context = await chromium.launchPersistentContext(profile, { executablePath, headless: false, viewport: { width: 1100, height: 800 }, ignoreDefaultArgs: ['--disable-extensions'], args: ['--enable-unsafe-extension-debugging', visible ? '--window-position=100,100' : '--window-position=-2000,-2000'] });
   const cdp = await context.browser()!.newBrowserCDPSession();
   const loaded = await cdp.send('Extensions.loadUnpacked' as never, { path: resolve('dist') } as never) as { id: string };
+  if(!liveTco){
+    const worker=context.serviceWorkers()[0]??await context.waitForEvent('serviceworker');
+    await worker.evaluate(()=>{const real=globalThis.fetch.bind(globalThis);globalThis.fetch=((input:RequestInfo|URL,init?:RequestInit)=>{const url=typeof input==='string'?input:input instanceof URL?input.href:input.url;if(url.startsWith('https://t.co/'))return Promise.resolve(new Response(null,{status:404}));return real(input,init);}) as typeof fetch;});
+  }
   return { context, cdp, extensionId: loaded.id, profile };
 }
 

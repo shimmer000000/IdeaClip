@@ -123,3 +123,11 @@ describe('正文与来源提取', () => {
     expect(githubProjects(['https://github.com/topics/idea', 'https://github.com/example/repo/issues/1', 'https://github.com/example/repo.git'])).toEqual(['https://github.com/example/repo']);
   });
 });
+
+it.each(['data-expanded-url','data-full-url','data-url','title','aria-label'])('X %s完整目标可识别，评论与引用不混入',attribute=>{
+ const url='https://x.com/test/status/123',doc=documentOf(`<article><a href="/test/status/123"><time></time></a><div data-testid="tweetText">项目免费开源：<a href="https://t.co/fixture" ${attribute}="https://github.com/example/complete">github.com/example/<span aria-hidden="true">…</span></a></div><div data-testid="quoteTweet"><a href="https://github.com/wrong/quote">引用</a></div></article><article><a href="https://github.com/wrong/comment">评论</a></article>`,url);
+ expect(extractFromDocument(doc,url).githubLinks).toEqual(['https://github.com/example/complete']);
+});
+it('X去掉aria-hidden省略号不能把仓库前缀当完整项目',()=>{
+ const url='https://x.com/test/status/123',doc=documentOf(`<article><a href="/test/status/123"><time></time></a><div data-testid="tweetText"><a href="https://t.co/fixture">github.com/example/partial<span aria-hidden="true">…</span></a></div></article>`,url);const p=extractFromDocument(doc,url);expect(p.githubLinks).toEqual([]);expect(p.text).toContain('partial…');expect(p.links[0].url).toBe('https://t.co/fixture');expect(p.warnings.join('')).toContain('待核实');
+});

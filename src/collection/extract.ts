@@ -36,6 +36,12 @@ function visibleClone(root: Element, metrics: { hiddenRemoved: number }): Elemen
   const rootStyle = view?.getComputedStyle(root);
   if (rootStyle?.display === 'none' || rootStyle?.visibility === 'hidden') return null;
   clone.querySelectorAll(noise).forEach(node => node.remove());
+  // X marks visible ellipsis aria-hidden for screen readers. Removing that span
+  // must not turn an incomplete URL into an apparently complete repository name.
+  originals.forEach((element,index)=>{
+    const copy=copies[index];
+    if(element.tagName==='A'&&/…|\.{3}/.test(element.textContent??'')&&clone.contains(copy)&&!/…|\.{3}/.test(copy.textContent??''))copy.append('…');
+  });
   // Closed details and collapsed/hidden DOM are not used to bypass access restrictions.
   clone.querySelectorAll('details:not([open])').forEach(node => { const summary = node.querySelector('summary'); node.replaceChildren(...(summary ? [summary] : [])); });
   return clone;
@@ -50,7 +56,7 @@ function metadata(doc: Document, ...names: string[]) {
 function safeLinks(root: Element, sourceUrl: string): PageLink[] {
   const links = new Map<string, PageLink>();
   for (const node of root.querySelectorAll('a[href]')) {
-    const candidates = [node.getAttribute('data-expanded-url'), node.getAttribute('href'), node.getAttribute('title'), node.textContent];
+    const candidates = [node.getAttribute('data-expanded-url'), node.getAttribute('data-full-url'), node.getAttribute('data-url'), node.getAttribute('href'), node.getAttribute('title'), node.getAttribute('aria-label'), node.textContent];
     const full = candidates.flatMap(v => v ? githubProjects([v]) : [])[0];
     const url = full || httpUrl(node.getAttribute('href'), sourceUrl);
     if (!url || url.split('#')[0] === sourceUrl.split('#')[0]) continue;

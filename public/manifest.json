@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
   "name": "IdeaClip",
-  "version": "0.2.21",
+  "version": "0.2.22",
   "description": "收藏浏览器灵感，在本地整理笔记，为商业模式分析与项目孵化做准备。",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": ["activeTab", "scripting", "storage", "webRequest"],
+  "host_permissions": ["https://t.co/*"],
   "optional_host_permissions": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
   "background": { "service_worker": "background.js", "type": "module" },
   "minimum_chrome_version": "114",

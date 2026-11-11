@@ -1,3 +1,6 @@
+import { db } from '../storage';
+import { resolveBrowserShortLinks } from './short-link-browser';
+import { withResolvedProjects, tcoUrl } from './short-links';
 import { emptyPage, type ExtractedPage } from './model';
 import { storeExtraction } from './storage';
 import { activateDraftSource, showNoteEditor } from '../inspiration/browser';
@@ -24,6 +27,10 @@ export async function collectActivePage(draftId?: string, editorTabId: number | 
     const reason = /permission|cannot access|cannot be scripted|extensions gallery/i.test(raw) ? '没有读取权限或此页面受浏览器限制。请在目标网页重新点击插件图标；不会绕过访问限制。' : raw;
     page = emptyPage(tab?.url ?? '', tab?.title ?? '', reason);
   }
+  if(page.platform==='x'&&page.links.some(l=>tcoUrl(l.url))){
+    const repositories=await resolveBrowserShortLinks(page.links);page=withResolvedProjects(page,repositories);
+    if(tab?.id&&(await chrome.tabs.get(tab.id)).url!==tab.url)throw Error('短链核实时原网页已跳转，未保存本次采集，请重新提取。');
+  }
   const id = await storeExtraction(page, tab?.id ?? null);
   if (draftId) await stageCapture(draftId, id);
   try {
@@ -43,4 +50,23 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   collecting = true;
   void collectActivePage(fromEditor ? message.draftId : undefined, sender.tab?.id ?? null).then(id => respond({ ok: true, id })).catch(e => respond({ ok: false, error: e instanceof Error ? e.message : '采集失败，请重试。' })).finally(() => { collecting = false; });
   return true;
+});
+
+const resolving=new Map<string,Promise<void>>();
+chrome.runtime.onMessage.addListener((message,sender,respond)=>{
+ if(message?.type!=='IC_RESOLVE_CAPTURE'||sender.id!==chrome.runtime.id||typeof message.id!=='string')return;
+ const own=chrome.runtime.getURL('collection.html');
+ if(!sender.url||sender.url.split('?')[0]!==own)return;
+ const requested=new URL(sender.url).searchParams.get('id');if(requested&&requested!==message.id)return;
+ let work=resolving.get(message.id);
+ if(!work){work=(async()=>{
+  if(!requested&&(await db.contentCaptures.orderBy('updatedAt').last())?.id!==message.id)return;
+  const previous=await db.contentCaptures.get(message.id);if(!previous||previous.platform!=='x')return;
+  const repositories=await resolveBrowserShortLinks(previous.links);if(!repositories.length)return;
+  await db.transaction('rw',db.contentCaptures,async()=>{
+   const current=await db.contentCaptures.get(message.id);if(!current||current.sourceUrl!==previous.sourceUrl||JSON.stringify(current.links)!==JSON.stringify(previous.links))return;
+   const next=withResolvedProjects(current,repositories);await db.contentCaptures.update(current.id,{links:next.links,githubLinks:next.githubLinks,warnings:next.warnings,updatedAt:Date.now()});
+  });
+ })().finally(()=>resolving.delete(message.id));resolving.set(message.id,work);}
+ void work.then(()=>respond({ok:true})).catch(()=>respond({ok:false}));return true;
 });

@@ -1,5 +1,8 @@
 # IdeaClip 开发约定
 
+- 0.2.22用户已授权自动解析X短链：只请求严格https://t.co/{有限字母数字}，credentials omit/redirect manual/referrer none，最多3短链×3跳、每项3.5秒、总10秒、HTML64KiB/2000节点，60秒失败/成功缓存。只读webRequest仅自身t.co GET的Location，或parse5静态meta refresh，不执行脚本、不请求目标GitHub或任意外站、不读Cookie/Auth。仅完整固定github.com HTTPS仓库格式才追加；不代表仓库存在/公开或许可。新采集自动追加，旧采集预览自动核实；事务复查sourceUrl和完整links，变化拒绝覆盖，不改原帖/正文/截图/笔记报告；容量不足不截断旧链接。DOM保留省略号，不混评论/引用、不猜仓库。Mock默认拦截t.co后台fetch，真实短链验收必须显式live开关，与Mock分别记证。
+
+
 - 0.2.21商业数字规则只识别指标直接相邻的数值声明，不把“收入没有证据”之后的周数/Star/访谈人数当成收入；这是有限语义启发式，不宣称能证明数据真实或覆盖全部幻觉。违规抛ReportValidationError(ai_report_business_number)，固定kind字段位置/enum/hypothesis期望，不含正文、数值、引文或任意模型字段。归入evidence阶段，Schema通过不等于语义通过。真正未知异常仍保留ai_report_validator；旧无响应诊断不得回填原因/恢复报告。不得自动改类、补造证据或重发付费请求，不更改历史费用预留。
 
 

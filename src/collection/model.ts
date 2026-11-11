@@ -76,3 +76,9 @@ export function emptyPage(url: string, title: string, warning: string): Extracte
   const safe = httpUrl(url) ?? '';
   return { sourceUrl: safe, platform: sourcePlatform(safe), siteName: safe ? new URL(safe).hostname : '无法访问的页面', title, author: null, publishedAt: null, text: '', images: [], links: [], githubLinks: [], collectedAt: Date.now(), status: 'unavailable', warnings: [warning, '无法读取的内容未作推断，可手动粘贴正文。'] };
 }
+
+/** Presence is not a resolved repository identity; no network or suffix guessing. */
+export function hasPendingProjectLink(links:PageLink[],text:string):boolean {
+ return links.some(l=>{try{return new URL(l.url).hostname==='t.co';}catch{return false;}})
+  || /github\.com\//i.test(text)&&githubTextLinks(text).length===0;
+}
