@@ -1,5 +1,5 @@
-.quality-summary { margin: 20px 0; padding: 20px; background: #f1f5eb; border: 1px solid #d8e1ce; border-radius: 12px; overflow-wrap: anywhere; }
+.quality-summary { margin: 20px 0; padding: 20px; background: var(--soft,#f1f5eb); border: 1px solid var(--border,#d8e1ce); border-radius: 12px; overflow-wrap: anywhere; }
 .quality-summary h3 { margin-top: 0; }
-.quality-summary article { padding: 12px 0; border-bottom: 1px solid #d8e1ce; }
+.quality-summary article { padding: 12px 0; border-bottom: 1px solid var(--border,#d8e1ce); }
 .quality-summary summary { cursor: pointer; font-weight: 600; }
 .quality-summary details { margin-top: 12px; }

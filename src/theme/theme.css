@@ -1,0 +1,16 @@
+:root{color-scheme:light}
+:root[data-theme=dark]{
+ color-scheme:dark;
+ --page:#101713;--surface:#18221e;--soft:#223027;--border:#3e5145;
+ --text:#e1eae4;--muted:#adbeaf;--accent:#a4d8b4;--danger:#ffb2a1;
+ --focus:#a4d8b4;--primary:#315b43;
+}
+header{gap:16px;flex-wrap:wrap}header nav{flex-wrap:wrap;align-items:center}
+.theme-control{margin-left:auto;flex:0 0 auto;max-width:100%;font-size:12px}
+.theme-control label{margin:0}.theme-control select{width:auto;max-width:100%;margin:0;padding:6px 10px;font-size:12px}
+.theme-control [role=alert]{display:block;max-width:220px;color:var(--danger,#a14435)}
+:root[data-theme=dark] dialog{background:var(--surface);color:var(--text)}
+:root[data-theme=dark] input{accent-color:var(--accent)}
+:root[data-theme=dark] .preview-frame{background:repeating-conic-gradient(#26372d 0% 25%,#18221e 0% 50%) 50%/20px 20px}
+@media(max-width:640px){header nav{gap:12px}.theme-control{margin-left:0}.popup .theme-control{margin-left:auto}}
+@media print{.theme-control{display:none}}

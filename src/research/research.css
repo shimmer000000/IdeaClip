@@ -7,7 +7,7 @@
 .research-main button { margin: 5px 8px 5px 0; }
 .research-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 0 20px; }
 .research-list { display: flex; flex-wrap: wrap; margin-top: 12px; }
-.research-ref { padding: 10px 0; border-bottom: 1px solid #dee4d9; overflow-wrap: anywhere; }
-.research-source { border: 1px solid #dee4d9; border-radius: 12px; padding: 20px; margin: 18px 0; }
+.research-ref { padding: 10px 0; border-bottom: 1px solid var(--border,#dee4d9); overflow-wrap: anywhere; }
+.research-source { border: 1px solid var(--border,#dee4d9); border-radius: 12px; padding: 20px; margin: 18px 0; }
 .research-main .check-line { display: flex; align-items: center; gap: 10px; }
 @media(max-width:700px) { .research-grid { grid-template-columns: 1fr; } .research-main { padding: 20px 12px; } }

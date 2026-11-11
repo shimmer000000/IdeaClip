@@ -1,5 +1,8 @@
 # IdeaClip 开发约定
 
+- 0.2.19外观仅localStorage ideaclip-appearance白名单system/light/dark；缺失、损坏或读取失败回退system，保存失败明确报错。data-theme及color-scheme统一全页；系统变化仅system响应，storage事件同步其他扩展页。启动模块在页面绘制前尽早应用主题；不把偏好写入Dexie/ZIP/预算/AI配置，不反色原截图，不修改网页采集或后台。新增颜色使用现有主题变量及浅色回退，弹窗不因切换器横向溢出。
+
+
 - 0.2.18 GitHub中心使用现有notes/analyses保存独立公开资料快照及八栏报告，不迁移旧库、不调用createNote自动队列。GitHub仅用户主动点击，api.github.com匿名GET、credentials omit、redirect error，单次最多3项/每项10秒/2MiB，README最多100000字符，不分页/重试/克隆/执行/访问外站。限流停止余项；冷却当前页面内60秒，不宣称跨重启限流器。X仅当前主帖清理后的DOM链接完整属性/可见完整文本，短链和省略号待核实，禁止猜测。五个旧模板定义保持原样，新第六模板复用费用确认和严格证据；Star不代表商业指标，未知许可证先核实。公开资料导出按缩进文本附录处理，防止README变成活动Markdown。免费规则推测不冒充AI市场研究；原Chrome/真实API/Mock结果分开记录。
 
 

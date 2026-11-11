@@ -1,7 +1,7 @@
 .comparison-main table { min-width: 1200px; width: 100%; border-collapse: collapse; font-size: 13px; }
-.comparison-main th, .comparison-main td { padding: 12px; border: 1px solid #dce3d6; text-align: center; }
-.comparison-main th { background: #eef3e8; }
-.comparison-main article { margin: 20px 0; border-top: 1px solid #dce3d6; padding-top: 16px; overflow-wrap: anywhere; }
+.comparison-main th, .comparison-main td { padding: 12px; border: 1px solid var(--border,#dce3d6); text-align: center; }
+.comparison-main th { background: var(--soft,#eef3e8); }
+.comparison-main article { margin: 20px 0; border-top: 1px solid var(--border,#dce3d6); padding-top: 16px; overflow-wrap: anywhere; }
 .comparison-main pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
 .comparison-main button { margin: 6px 8px 6px 0; }
 .comparison-main details { margin: 10px 0; }
