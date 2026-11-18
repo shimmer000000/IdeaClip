@@ -1,6 +1,6 @@
 # IdeaClip 开发约定
 
-- 0.2.24按用户明确授权连接现有MoneyRadar，可修改这两个既有仓库并分别脱敏提交/普通推送；不新建插件、不动其他项目、不收费/部署，交付后停止。现有扩展路径/ID和Dexie15保持，原Chrome重新加载未完成，详见docs/MONEYRADAR-INTEGRATION.md。
+- 0.2.24按用户明确授权连接现有MoneyRadar，可修改这两个既有仓库并分别脱敏提交/普通推送；不新建插件、不动其他项目、不收费/部署，交付后停止。现有扩展路径/ID和Dexie15保持，原 Chrome 实机验收通过，详见docs/MONEYRADAR-INTEGRATION.md。
 - 同步只在已保存收藏详情逐条预览确认后触发；正文摘要可编辑，备注默认空白，不读body私人感悟/截图/analyses。发送白名单与服务端严格校验，不能把宣传或收费入口当收入证据。不得自动全库/后台同步。
 - MoneyRadar配对能力仅收藏写入和本配对回执，独立于AI/研究/主密钥。Key/nonce只在chrome.storage.session、TRUSTED_CONTEXTS，不入Dexie/ZIP/日志/Git；本地outbox只保存已确认公开快照和结果。失败无自动重发，手动重试先查回执，同ID幂等，来源或配对变化不重放。
 - MoneyRadar服务仅127.0.0.1，插件不请求公开来源或任何付费接口；保留原AI规则和manifest权限。浏览器验收用隔离配置/临时MR库，阻断外网；原生权限批准Mock与原安装须分别记证。扫描完整历史/暂存/工作区后分别普通推送，IdeaClip现有Public/MR Private保持原设置，不上传真实库/profile/截图/trace。
