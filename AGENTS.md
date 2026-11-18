@@ -1,5 +1,10 @@
 # IdeaClip 开发约定
 
+- 0.2.24按用户明确授权连接现有MoneyRadar，可修改这两个既有仓库并分别脱敏提交/普通推送；不新建插件、不动其他项目、不收费/部署，交付后停止。现有扩展路径/ID和Dexie15保持，原Chrome重新加载未完成，详见docs/MONEYRADAR-INTEGRATION.md。
+- 同步只在已保存收藏详情逐条预览确认后触发；正文摘要可编辑，备注默认空白，不读body私人感悟/截图/analyses。发送白名单与服务端严格校验，不能把宣传或收费入口当收入证据。不得自动全库/后台同步。
+- MoneyRadar配对能力仅收藏写入和本配对回执，独立于AI/研究/主密钥。Key/nonce只在chrome.storage.session、TRUSTED_CONTEXTS，不入Dexie/ZIP/日志/Git；本地outbox只保存已确认公开快照和结果。失败无自动重发，手动重试先查回执，同ID幂等，来源或配对变化不重放。
+- MoneyRadar服务仅127.0.0.1，插件不请求公开来源或任何付费接口；保留原AI规则和manifest权限。浏览器验收用隔离配置/临时MR库，阻断外网；原生权限批准Mock与原安装须分别记证。扫描完整历史/暂存/工作区后分别普通推送，IdeaClip现有Public/MR Private保持原设置，不上传真实库/profile/截图/trace。
+
 - 0.2.23个人Codex模板1.0.1新增应用自有十栏数组JSON示例与输出前自检，system中不插入用户模板/资料；指导与Schema/证据目录一并计入预览Token和费用，不提高用户配置的输出上限。每栏严格1～8条Claim，单对象、缺栏、额外包装仍拒绝，不自动包装/补齐/重试。只读映射精确旧1.0.0应用定义，保留启停/更新时间；篡改或未知版本拒绝，旧签名不能继续授权。旧报告嵌入模板、诊断和费用预留原样保留。Mock不能证明真实模型必定遵循格式，禁止使用真实付费请求验收。
 
 - 0.2.22用户已授权自动解析X短链：只请求严格https://t.co/{有限字母数字}，credentials omit/redirect manual/referrer none，最多3短链×3跳、每项3.5秒、总10秒、HTML64KiB/2000节点，60秒失败/成功缓存。只读webRequest仅自身t.co GET的Location，或parse5静态meta refresh，不执行脚本、不请求目标GitHub或任意外站、不读Cookie/Auth。仅完整固定github.com HTTPS仓库格式才追加；不代表仓库存在/公开或许可。新采集自动追加，旧采集预览自动核实；事务复查sourceUrl和完整links，变化拒绝覆盖，不改原帖/正文/截图/笔记报告；容量不足不截断旧链接。DOM保留省略号，不混评论/引用、不猜仓库。Mock默认拦截t.co后台fetch，真实短链验收必须显式live开关，与Mock分别记证。

@@ -1,0 +1,20 @@
+[data-moneyradar] label:has(> input[type='checkbox']) {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 18px 0 12px;
+  line-height: 1.6;
+}
+[data-moneyradar] input[type='checkbox'] {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin: 2px 0 0;
+}
+[data-moneyradar] p, [data-moneyradar] code, [data-moneyradar] a {
+  overflow-wrap: anywhere;
+}
+[data-moneyradar] [role='dialog'] { margin-top: 18px; }
+[data-moneyradar] summary { cursor: pointer; padding: 8px 0; }
+[data-moneyradar] [role='status'] { margin-top: 12px; }

@@ -8,6 +8,7 @@ import { adoptCapture, commitDraft, reloadSavedNote } from './repository';
 import { useDraft } from './useDraft';
 import type { NoteDraft } from './model';
 import {requestCapture} from '../capture/request';
+import { MoneyRadarSync } from '../moneyradar/Sync';
 
 function LocalImage({ id }: { id: string }) {
   const image = useLiveQuery(() => db.screenshots.get(id).catch(() => undefined), [id]);
@@ -75,6 +76,7 @@ function EditorForm({ draft }: { draft: NoteDraft }) {
   const contentSource = captures?.find(c => input.captureIds.includes(c.id) && c.text === input.content && c.sourceUrl === input.url);
   return <>
     <div className="note-save-status" aria-live="polite"><span role="status">{form.status}</span><span>{note?.saveState === 'saved' ? '已保存笔记' : note ? '已存为草稿' : '尚未提交为笔记'}{draft.hasChanges ? ' · 有未提交编辑' : ''}</span></div>
+    <MoneyRadarSync noteId={draft.id} disabled={busy || !note || note.saveState !== 'saved' || draft.hasChanges || form.status.startsWith('正在') || form.status.startsWith('已自动') || !!form.error} />
     {(error || form.error) && <div role="alert" className="error panel">{error || form.error}{form.error && <button type="button" onClick={() => { void run(async () => {}); }}>重试保留草稿</button>}{note && <button type="button" onClick={() => { void reloadSaved(); }}>重新读取已保存版本</button>}</div>}
     <section className="panel note-section"><h2>网页截图</h2><div className="actions"><button disabled={busy} onClick={() => sourceAction('visible')}>截取可见页面</button><button disabled={busy} onClick={() => sourceAction('region')}>选择区域截图</button><button disabled={busy} onClick={() => sourceAction('full')}>截取长图</button><button disabled={busy} onClick={() => sourceAction('segment')}>分段截长图</button></div>
       <p className="muted">可添加多张截图。移除只解除这条笔记的关联，保留原图。超长网页可用“分段截长图”从当前位置截取一段。长图会自动滚动原网页，Esc/滚轮/点击可取消；请等待加载完成，固定和悬浮元素不会收入长图。</p>
